@@ -1,0 +1,7 @@
+from typing import Final
+
+F1_FORMAT: Final = '.4f'
+REPORT_WIDTH: Final = 100
+DEFAULT_VIABLE_F1_GAP = 0.01
+DEFAULT_ACCEPTABLE_GAP = 0.02
+DEFAULT_LARGE_GAP = 0.05
