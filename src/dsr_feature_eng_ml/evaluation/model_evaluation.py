@@ -461,14 +461,13 @@ class ModelEvaluation:
             ModelResults: Comprehensive evaluation results.
 
         Example:
-            >>> config = ModelEvaluationConfig.from_base_features(
-            ...     dataset=df,
-            ...     target_column='target',
-            ...     config_params=params,
-            ...     param_grids=grids
-            ... )
-            >>> results = ModelEvaluation.evaluate_from_config(config)
-            >>> best_model_results.compare_model_results(results)
+            >>> configs = [
+            ...     ModelEvaluationConfig.from_dataset(df1, 'target', 'Phase 1', params, grids),
+            ...     ModelEvaluationConfig.from_dataset(df2, 'target', 'Phase 2', params, grids),
+            ... ]
+            >>> for config in configs:
+            ...     results = ModelEvaluation.evaluate_from_config(config)
+            ...     best_model_results.compare_model_results(results)
         """
         return cls.evaluate_dataset(
             data_splits=config.data_splits,

@@ -172,4 +172,3 @@ class ModelEvaluationConfig:
             auto_increment_phase=auto_increment,
             **kwargs
         )
-
