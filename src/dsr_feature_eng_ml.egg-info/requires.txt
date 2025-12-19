@@ -3,6 +3,7 @@ dsr-data-tools>=0.0.1
 numpy>=2.0.0
 pandas>=2.0.0
 scikit-learn>=1.5.0
+matplotlib>=3.5.0
 
 [dev]
 pytest>=7.0

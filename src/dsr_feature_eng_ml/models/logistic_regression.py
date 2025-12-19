@@ -249,15 +249,24 @@ class LogisticRegression(ModelSpecification):
             >>> model = LogisticRegression.model_from_hyperparameters(params, random_state=42, class_weight='balanced')
             >>> model.fit(X_train, y_train)
         """
+        # Build model parameters, conditionally including l1_ratio
+        # l1_ratio is only supported by 'saga' and 'elasticnet' solvers
+        # LBFGS solver only supports L2 (ridge) penalty and does not support l1_ratio
+        model_kwargs = {
+            'random_state': random_state,
+            'C': params['C'],
+            'solver': params['solver'],  # pyright: ignore[reportArgumentType]
+            # pyright: ignore[reportArgumentType]
+            'class_weight': class_weight,
+            'max_iter': max_iter
+        }
 
-        return SklearnLogisticRegression(
-            random_state=random_state,
-            C=params['C'],
-            solver=params['solver'],  # pyright: ignore[reportArgumentType]
-            class_weight=class_weight,  # pyright: ignore[reportArgumentType]
-            l1_ratio=params.get('l1_ratio'),
-            max_iter=max_iter
-        )
+        # Only pass l1_ratio for solvers that support it
+        solver = params['solver']
+        if solver in ('saga', 'elasticnet') and params.get('l1_ratio') is not None:
+            model_kwargs['l1_ratio'] = params.get('l1_ratio')
+
+        return SklearnLogisticRegression(**model_kwargs)
 
     @classmethod
     def optimal_threshold(
@@ -385,14 +394,21 @@ class LogisticRegression(ModelSpecification):
         """
         report_text = ''
 
-        validation_model = SklearnLogisticRegression(
-            random_state=self.random_state,
-            C=self.hyperparameters.C,
-            solver=self.hyperparameters.solver,  # type: ignore[arg-type]
-            class_weight=self.class_weight,
-            l1_ratio=self.hyperparameters.l1_ratio,
-            max_iter=self.max_iter
-        )
+        # Build model parameters, conditionally including l1_ratio
+        # l1_ratio is only supported by 'saga' and 'elasticnet' solvers
+        model_kwargs = {
+            'random_state': self.random_state,
+            'C': self.hyperparameters.C,
+            'solver': self.hyperparameters.solver,  # type: ignore[arg-type]
+            'class_weight': self.class_weight,
+            'max_iter': self.max_iter
+        }
+
+        # Only pass l1_ratio for solvers that support it
+        if self.hyperparameters.solver in ('saga', 'elasticnet') and self.hyperparameters.l1_ratio is not None:
+            model_kwargs['l1_ratio'] = self.hyperparameters.l1_ratio
+
+        validation_model = SklearnLogisticRegression(**model_kwargs)
 
         validation_model.fit(self.data_splits.features_train,
                              self.data_splits.target_train)
@@ -562,13 +578,21 @@ F1 score: {f1_train_result:{F1_FORMAT}}
         """
         report_text = ''
 
-        self.test_model = SklearnLogisticRegression(
-            random_state=self.random_state,
-            C=self.param_grid['C'],
-            solver=self.param_grid['solver'],
-            l1_ratio=self.param_grid.get('l1_ratio'),
-            max_iter=self.max_iter
-        )
+        # Build model parameters, conditionally including l1_ratio
+        # l1_ratio is only supported by 'saga' and 'elasticnet' solvers
+        model_kwargs = {
+            'random_state': self.random_state,
+            'C': self.param_grid['C'],
+            'solver': self.param_grid['solver'],
+            'max_iter': self.max_iter
+        }
+
+        # Only pass l1_ratio for solvers that support it
+        solver = self.param_grid['solver']
+        if solver in ('saga', 'elasticnet') and self.param_grid.get('l1_ratio') is not None:
+            model_kwargs['l1_ratio'] = self.param_grid.get('l1_ratio')
+
+        self.test_model = SklearnLogisticRegression(**model_kwargs)
 
         self.test_model.fit(self.data_splits.features_train,
                             self.data_splits.target_train)

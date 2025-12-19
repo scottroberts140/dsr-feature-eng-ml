@@ -1,3 +1,5 @@
+LICENSE
+README.md
 pyproject.toml
 src/dsr_feature_eng_ml/__init__.py
 src/dsr_feature_eng_ml/constants.py
