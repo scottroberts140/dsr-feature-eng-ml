@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: dsr-feature-eng-ml
-Version: 0.0.1
+Version: 0.0.2
 Summary: Machine learning-specific feature engineering utilities including models and evaluation tools.
 Author-email: Scott Roberts <scottrdeveloper@gmail.com>
 License: MIT

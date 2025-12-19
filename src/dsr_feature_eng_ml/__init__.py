@@ -25,6 +25,7 @@ from dsr_feature_eng_ml.evaluation import (
     ModelFeatureImportance,
     ModelConfiguration,
     ModelEvaluation,
+    ModelEvaluationConfig,
     ModelResults,
     BestModelResults,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "ModelFeatureImportance",
     "ModelConfiguration",
     "ModelEvaluation",
+    "ModelEvaluationConfig",
     "ModelResults",
     "BestModelResults",
     "ModelSpecification",

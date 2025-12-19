@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Union, Optional, cast, Mapping, Type, Any, Final
+from typing import Union, Optional, cast, Mapping, Type, Any, Final, TYPE_CHECKING
 from dsr_feature_eng_ml.enums import ModelBalancing
 from dsr_feature_eng_ml.evaluation.model_results import ModelResults
 from dsr_feature_eng_ml.evaluation.data_splits import DataSplits
@@ -8,6 +8,9 @@ from dsr_feature_eng_ml.models.decision_tree import DecisionTree
 from dsr_feature_eng_ml.models.random_forest import RandomForest
 from dsr_feature_eng_ml.models.logistic_regression import LogisticRegression
 from dsr_feature_eng_ml.constants import DEFAULT_LARGE_GAP, DEFAULT_ACCEPTABLE_GAP
+
+if TYPE_CHECKING:
+    from dsr_feature_eng_ml.evaluation.model_evaluation_config import ModelEvaluationConfig
 
 
 class ModelEvaluation:
@@ -439,6 +442,58 @@ class ModelEvaluation:
             )
 
         return model_results
+
+    @classmethod
+    def evaluate_from_config(
+        cls,
+        config: ModelEvaluationConfig
+    ) -> ModelResults:
+        """Evaluate dataset using a ModelEvaluationConfig object.
+        
+        Provides a convenient way to run model evaluation using a configuration
+        object, eliminating parameter duplication across multiple evaluation phases.
+        
+        Args:
+            config (ModelEvaluationConfig): Configuration object containing all
+                parameters needed for model evaluation.
+        
+        Returns:
+            ModelResults: Comprehensive evaluation results.
+        
+        Example:
+            >>> config = ModelEvaluationConfig.from_base_features(
+            ...     dataset=df,
+            ...     target_column='target',
+            ...     config_params=params,
+            ...     param_grids=grids
+            ... )
+            >>> results = ModelEvaluation.evaluate_from_config(config)
+            >>> best_model_results.compare_model_results(results)
+        """
+        return cls.evaluate_dataset(
+            data_splits=config.data_splits,
+            dtree_param_grid=config.dtree_param_grid,
+            rf_param_grid=config.rf_param_grid,
+            lr_param_grid=config.lr_param_grid,
+            cv=config.cv,
+            n_iter=config.n_iter,
+            max_iter=config.max_iter,
+            scoring=config.scoring,
+            n_jobs=config.n_jobs,
+            viable_f1_gap=config.viable_f1_gap,
+            report_title=config.report_title,
+            perform_dtree_feature_selection=config.perform_dtree_feature_selection,
+            perform_rf_feature_selection=config.perform_rf_feature_selection,
+            evaluate_decision_tree=config.evaluate_decision_tree,
+            evaluate_random_forest=config.evaluate_random_forest,
+            evaluate_logistic_regression=config.evaluate_logistic_regression,
+            perform_imbalance=config.perform_imbalance,
+            perform_auto_balance=config.perform_auto_balance,
+            perform_upsampling=config.perform_upsampling,
+            perform_downsampling=config.perform_downsampling,
+            acceptable_gap=config.acceptable_gap,
+            large_gap=config.large_gap,
+        )
 
     def reset_baseline(
             self
