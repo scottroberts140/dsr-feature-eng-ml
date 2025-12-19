@@ -449,17 +449,17 @@ class ModelEvaluation:
         config: ModelEvaluationConfig
     ) -> ModelResults:
         """Evaluate dataset using a ModelEvaluationConfig object.
-        
+
         Provides a convenient way to run model evaluation using a configuration
         object, eliminating parameter duplication across multiple evaluation phases.
-        
+
         Args:
             config (ModelEvaluationConfig): Configuration object containing all
                 parameters needed for model evaluation.
-        
+
         Returns:
             ModelResults: Comprehensive evaluation results.
-        
+
         Example:
             >>> config = ModelEvaluationConfig.from_base_features(
             ...     dataset=df,

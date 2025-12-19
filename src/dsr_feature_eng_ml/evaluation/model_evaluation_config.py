@@ -14,11 +14,11 @@ import pandas as pd
 @dataclass
 class ModelEvaluationConfig:
     """Configuration container for model evaluation runs.
-    
+
     Encapsulates all parameters for a single model evaluation, including data splits,
     model hyperparameter grids, evaluation settings, and reporting options. Supports
     auto-incrementing phase numbers for sequential evaluation workflows.
-    
+
     Attributes:
         data_splits: Dataset splits for training, validation, and testing.
         dataset_name: Human-readable name for this dataset/phase (e.g., "Base Feature Set").
@@ -45,16 +45,16 @@ class ModelEvaluationConfig:
         phase_number: Explicit phase number (None to auto-increment).
         auto_increment_phase: Whether to auto-increment phase number.
     """
-    
+
     # Core data
     data_splits: object  # dfem.DataSplits
     dataset_name: str
-    
+
     # Model hyperparameter grids
     dtree_param_grid: dict
     rf_param_grid: dict
     lr_param_grid: dict
-    
+
     # Evaluation parameters
     cv: int
     n_iter: int
@@ -62,50 +62,50 @@ class ModelEvaluationConfig:
     scoring: str
     n_jobs: int
     viable_f1_gap: float
-    
+
     # Feature selection
     perform_dtree_feature_selection: bool = True
     perform_rf_feature_selection: bool = True
-    
+
     # Model evaluation options
     evaluate_decision_tree: bool = True
     evaluate_random_forest: bool = True
     evaluate_logistic_regression: bool = True
-    
+
     # Class balancing strategies
     perform_imbalance: bool = True
     perform_auto_balance: bool = True
     perform_upsampling: bool = True
     perform_downsampling: bool = True
-    
+
     # Gap thresholds
     acceptable_gap: float = 0.05
     large_gap: float = 0.10
-    
+
     # Phase numbering
     phase_number: Optional[int] = None
     auto_increment_phase: bool = True
-    
+
     def __post_init__(self):
         """Handle phase number auto-increment if enabled."""
         # Avoid circular import by importing here
         import dsr_feature_eng_ml as dfem
-        
+
         if self.auto_increment_phase:
             dfem.ModelEvaluation.phase_number += 1
             self.phase_number = dfem.ModelEvaluation.phase_number
         elif self.phase_number is None:
             self.phase_number = dfem.ModelEvaluation.phase_number
-    
+
     @property
     def report_title(self) -> str:
         """Generate report title from phase number and dataset name.
-        
+
         Returns:
             str: Formatted report title like "Phase 1 - Base Feature Set"
         """
         return f'Phase {self.phase_number} - {self.dataset_name}'
-    
+
     @classmethod
     def from_dataset(
         cls,
@@ -118,9 +118,9 @@ class ModelEvaluationConfig:
         **kwargs
     ) -> ModelEvaluationConfig:
         """Create evaluation config from a DataFrame.
-        
+
         Generic factory method for creating configs from any dataset.
-        
+
         Args:
             dataset: DataFrame to analyze.
             target_column: Name of the target column.
@@ -131,10 +131,10 @@ class ModelEvaluationConfig:
             auto_increment: Whether to auto-increment phase number.
             **kwargs: Additional parameters to pass to evaluate_dataset (e.g., 
                      evaluate_decision_tree, perform_auto_balance, etc.)
-        
+
         Returns:
             ModelEvaluationConfig: Configuration object ready for evaluation.
-        
+
         Example:
             >>> config = ModelEvaluationConfig.from_dataset(
             ...     dataset=df_processed,
@@ -146,7 +146,7 @@ class ModelEvaluationConfig:
         """
         # Import here to avoid circular dependency
         import dsr_feature_eng_ml as dfem
-        
+
         all_features = [col for col in dataset.columns if col != target_column]
         data_splits = dfem.DataSplits.from_data_source(
             src=dataset,
@@ -156,7 +156,7 @@ class ModelEvaluationConfig:
             valid_size=config_params['valid_size'],
             random_state=config_params['random_state']
         )
-        
+
         return cls(
             data_splits=data_splits,
             dataset_name=dataset_name,
@@ -172,102 +172,4 @@ class ModelEvaluationConfig:
             auto_increment_phase=auto_increment,
             **kwargs
         )
-    
-    @classmethod
-    def from_base_features(
-        cls,
-        dataset: pd.DataFrame,
-        target_column: str,
-        config_params: dict,
-        param_grids: dict,
-        auto_increment: bool = True,
-        **kwargs
-    ) -> ModelEvaluationConfig:
-        """Create evaluation config for base feature set.
-        
-        Args:
-            dataset: Base DataFrame with prepared features.
-            target_column: Name of the target column.
-            config_params: Configuration parameters dict.
-            param_grids: Hyperparameter grids dict.
-            auto_increment: Whether to auto-increment phase number.
-            **kwargs: Additional parameters for evaluate_dataset.
-        
-        Returns:
-            ModelEvaluationConfig: Configuration for base feature evaluation.
-        """
-        return cls.from_dataset(
-            dataset=dataset,
-            target_column=target_column,
-            dataset_name="Base Feature Set",
-            config_params=config_params,
-            param_grids=param_grids,
-            auto_increment=auto_increment,
-            **kwargs
-        )
-    
-    @classmethod
-    def from_interaction_features(
-        cls,
-        dataset: pd.DataFrame,
-        target_column: str,
-        config_params: dict,
-        param_grids: dict,
-        auto_increment: bool = True,
-        **kwargs
-    ) -> ModelEvaluationConfig:
-        """Create evaluation config for interaction features.
-        
-        Args:
-            dataset: DataFrame with interaction features added.
-            target_column: Name of the target column.
-            config_params: Configuration parameters dict.
-            param_grids: Hyperparameter grids dict.
-            auto_increment: Whether to auto-increment phase number.
-            **kwargs: Additional parameters for evaluate_dataset.
-        
-        Returns:
-            ModelEvaluationConfig: Configuration for interaction features evaluation.
-        """
-        return cls.from_dataset(
-            dataset=dataset,
-            target_column=target_column,
-            dataset_name="Interaction Features",
-            config_params=config_params,
-            param_grids=param_grids,
-            auto_increment=auto_increment,
-            **kwargs
-        )
-    
-    @classmethod
-    def from_age_bins(
-        cls,
-        dataset: pd.DataFrame,
-        target_column: str,
-        config_params: dict,
-        param_grids: dict,
-        auto_increment: bool = True,
-        **kwargs
-    ) -> ModelEvaluationConfig:
-        """Create evaluation config for age bins feature set.
-        
-        Args:
-            dataset: DataFrame with age bins features added.
-            target_column: Name of the target column.
-            config_params: Configuration parameters dict.
-            param_grids: Hyperparameter grids dict.
-            auto_increment: Whether to auto-increment phase number.
-            **kwargs: Additional parameters for evaluate_dataset.
-        
-        Returns:
-            ModelEvaluationConfig: Configuration for age bins evaluation.
-        """
-        return cls.from_dataset(
-            dataset=dataset,
-            target_column=target_column,
-            dataset_name="Age Bins",
-            config_params=config_params,
-            param_grids=param_grids,
-            auto_increment=auto_increment,
-            **kwargs
-        )
+
