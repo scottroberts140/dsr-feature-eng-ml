@@ -1,0 +1,128 @@
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Optional, Type
+from dsr_feature_eng_ml.enums import (
+    ModelType,
+    BalancingStrategy,
+    ScoringMetric,
+    TaskType,
+    OptimizationStrategy,
+)
+from dsr_feature_eng_ml.models.model_specification import (
+    ModelSpecification,
+    ModelParams,
+)
+from dsr_feature_eng_ml.evaluation.schema import DataSplits
+from dsr_feature_eng_ml.preferences import prefs
+from dsr_utils import format_label_value_pairs
+from sklearn.linear_model import LinearRegression as SklearnLinearRegression
+
+
+@dataclass(frozen=True)
+class LinearRegressionParams(ModelParams):
+    fit_intercept: bool = True
+    copy_X: bool = True
+    n_jobs: Optional[int] = None
+    positive: bool = False
+    random_state: Optional[int] = None
+    task_type: TaskType = TaskType.REGRESSION
+    scoring: ScoringMetric = ScoringMetric.R2
+
+    def info(self) -> str:
+        data = [
+            ("Fit Intercept", f"{self.fit_intercept}"),
+            ("Positive Only", f"{self.positive}"),
+            ("Task Type", f"{self.task_type}"),
+            ("Scoring", f"{self.scoring}"),
+        ]
+        return format_label_value_pairs(data)
+
+    @staticmethod
+    def get_standard_search_grid(narrow: bool = True) -> dict[str, list]:
+        # Linear Regression usually isn't "tuned" in the same way,
+        # but we provide the grid for interface consistency.
+        return {"fit_intercept": [True, False], "positive": [True, False]}
+
+
+class LinearRegression(
+    ModelSpecification[LinearRegressionParams, SklearnLinearRegression]
+):
+    def get_estimator_class(
+        self,
+    ) -> Type[SklearnLinearRegression]:
+        return SklearnLinearRegression
+
+    params_class = LinearRegressionParams
+
+    @property
+    def task_type(self) -> TaskType:
+        return self._task_type
+
+    @property
+    def scoring(self) -> ScoringMetric:
+        return self._scoring
+
+    @scoring.setter
+    def scoring(self, value: ScoringMetric):
+        self._scoring = value
+
+    @property
+    def model_type(self) -> ModelType:
+        return self._model_type
+
+    @property
+    def model_dials(self) -> LinearRegressionParams:
+        return self._model_dials
+
+    @model_dials.setter
+    def model_dials(self, value: LinearRegressionParams) -> None:
+        self._model_dials = value
+
+    def __init__(
+        self,
+        cv: Optional[int],
+        balancing_strategy: BalancingStrategy,
+        params: Optional[LinearRegressionParams] = None,
+        task_type: TaskType = TaskType.REGRESSION,
+        n_jobs: int = 3,
+        n_iter: int = -1,
+        acceptable_gap: float = prefs.acceptable_gap,
+        large_gap: float = prefs.large_gap,
+        optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
+    ):
+        # Use provided params or fall back to defaults
+        # We ensure the data's random_state is used if not specified in params
+        if params is None:
+            params = LinearRegressionParams(
+                task_type=task_type,
+                random_state=1,
+            )
+
+        self._model_dials = params
+        self._task_type = TaskType.REGRESSION
+        self._scoring = self.model_dials.scoring
+
+        super().__init__(
+            cv=cv,
+            balancing_strategy=balancing_strategy,
+            n_jobs=n_jobs,
+            n_iter=n_iter,
+            acceptable_gap=acceptable_gap,
+            large_gap=large_gap,
+        )
+
+        self._model_type = ModelType.LINEAR_REGRESSION
+        self.optimization_strategy = optimization_strategy
+        self.estimator = self.create_estimator()
+
+    def create_estimator(
+        self, parameters: Optional[LinearRegressionParams] = None
+    ) -> SklearnLinearRegression:
+        params = parameters or self.model_dials
+
+        return SklearnLinearRegression(
+            fit_intercept=params.fit_intercept,
+            copy_X=params.copy_X,
+            n_jobs=params.n_jobs,
+            positive=params.positive,
+        )

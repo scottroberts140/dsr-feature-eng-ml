@@ -1,24 +1,24 @@
-"""
-Evaluation tools for model assessment and validation.
+from typing import TypeAlias
 
-Provides utilities for model evaluation, validation results, and feature importance analysis.
-"""
+from dsr_feature_eng_ml.evaluation.schema import (
+    DataSplits,
+    ModelConfiguration,
+    ModelFeatureImportance,
+    ModelAuditorConfig,
+    ModelConfigurationStats,
+)
+from dsr_feature_eng_ml.evaluation.model_audit_summary import ModelAuditSummary
 
-from dsr_feature_eng_ml.evaluation.model_configuration import ModelConfiguration
-from dsr_feature_eng_ml.evaluation.model_evaluation import ModelEvaluation
-from dsr_feature_eng_ml.evaluation.model_evaluation_config import ModelEvaluationConfig
-from dsr_feature_eng_ml.evaluation.model_results import ModelResults, BestModelResults
-from dsr_feature_eng_ml.evaluation.validation_results import ValidationResults
-from dsr_feature_eng_ml.evaluation.feature_importance import ModelFeatureImportance
-from dsr_feature_eng_ml.evaluation.data_splits import DataSplits
+ModelSplitStats: TypeAlias = ModelConfigurationStats.ModelSplitStats
+SplitType: TypeAlias = ModelConfigurationStats.ModelSplitStats.SplitType
 
 __all__ = [
     "DataSplits",
-    "ValidationResults",
-    "ModelFeatureImportance",
     "ModelConfiguration",
-    "ModelEvaluation",
-    "ModelEvaluationConfig",
-    "ModelResults",
-    "BestModelResults",
+    "ModelFeatureImportance",
+    "ModelAuditorConfig",
+    "ModelConfigurationStats",
+    "ModelSplitStats",
+    "SplitType",
+    "ModelAuditSummary",
 ]

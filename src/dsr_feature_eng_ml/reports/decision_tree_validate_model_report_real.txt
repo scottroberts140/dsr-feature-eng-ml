@@ -1,0 +1,9 @@
+Target Frequency: 0    0.68
+1    0.32
+Name: proportion, dtype: float64
+-------------------Decision Tree (Auto-Balanced - Validation)-------------------
+Parameters: {'max_depth': 5, 'min_samples_leaf': 1, 'min_samples_split': 2}
+CV score:             0.4595
+Training Set score:   None
+Validation Set score: None
+Model Generalization: Undefined

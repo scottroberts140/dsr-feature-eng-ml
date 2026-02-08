@@ -1,6 +1,7 @@
 """
 Tests for dsr_feature_eng_ml.evaluation module.
 """
+
 import pytest
 import pandas as pd
 import numpy as np
@@ -13,13 +14,15 @@ def sample_data():
     """Create sample data for model evaluation tests."""
     np.random.seed(42)
     n_samples = 100
-    
-    return pd.DataFrame({
-        'feature_1': np.random.randn(n_samples),
-        'feature_2': np.random.randn(n_samples),
-        'feature_3': np.random.randn(n_samples),
-        'target': np.random.randint(0, 2, n_samples),
-    })
+
+    return pd.DataFrame(
+        {
+            "feature_1": np.random.randn(n_samples),
+            "feature_2": np.random.randn(n_samples),
+            "feature_3": np.random.randn(n_samples),
+            "target": np.random.randint(0, 2, n_samples),
+        }
+    )
 
 
 class TestEvaluationModule:
@@ -29,15 +32,11 @@ class TestEvaluationModule:
         """Verify that evaluation module is importable."""
         assert evaluation is not None
 
-    def test_model_evaluation_config_exists(self):
-        """Verify that ModelEvaluationConfig class exists."""
-        assert hasattr(evaluation, 'ModelEvaluationConfig')
-
     def test_data_splits_creation(self, sample_data):
         """Test DataSplits creation from data source."""
         # Add tests based on your DataSplits implementation
         assert isinstance(sample_data, pd.DataFrame)
-        assert 'target' in sample_data.columns
+        assert "target" in sample_data.columns
 
 
 class TestModelEvaluationConfig:
@@ -46,7 +45,7 @@ class TestModelEvaluationConfig:
     def test_config_creation(self, sample_data):
         """Test creating a configuration object."""
         # Example test - adjust based on your actual API
-        target_col = 'target'
+        target_col = "target"
         features = [col for col in sample_data.columns if col != target_col]
         assert len(features) > 0
 

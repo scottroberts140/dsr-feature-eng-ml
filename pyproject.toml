@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsr-feature-eng-ml"
-version = "0.0.2"
+version = "0.1.0"
 description = "Machine learning-specific feature engineering utilities including models and evaluation tools."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -55,3 +55,9 @@ packages = ["dsr_feature_eng_ml"]
 
 [tool.setuptools.package-dir]
 "" = "src"
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+use_parentheses = true

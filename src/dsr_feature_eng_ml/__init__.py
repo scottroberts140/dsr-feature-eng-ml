@@ -1,70 +1,29 @@
-"""
-dsr_feature_eng_ml: Machine learning-specific feature engineering utilities.
+"""Package entry point for dsr_feature_eng_ml.
 
-Provides enums for model configuration, evaluation methods, and data balancing strategies,
-along with specialized ML tools for feature engineering workflows.
+Ensure the preferences singleton initializes immediately on package import.
 """
 
-from dsr_feature_eng_ml.constants import (
-    F1_FORMAT,
-    REPORT_WIDTH,
-    DEFAULT_VIABLE_F1_GAP,
-    DEFAULT_ACCEPTABLE_GAP,
-    DEFAULT_LARGE_GAP,
-)
+from dsr_feature_eng_ml.utils.memory import validate_n_jobs, check_memory_risk
 from dsr_feature_eng_ml.enums import (
-    ModelGeneralization,
-    ModelType,
-    ModelBalancing,
-    ModelEvaluationMethod,
-    ModelConfigurationSortOrder,
+    ModelTypeTuningMultiplier,
+    PlotFileName,
+    ModelTypeTaskType,
+    ModelTypeData,
+    ModelEnumSortOrder,
+    TaskTypeSortOrder,
+    ModelTypeDataRecType,
 )
-from dsr_feature_eng_ml.evaluation import (
-    DataSplits,
-    ValidationResults,
-    ModelFeatureImportance,
-    ModelConfiguration,
-    ModelEvaluation,
-    ModelEvaluationConfig,
-    ModelResults,
-    BestModelResults,
-)
-from dsr_feature_eng_ml.models import (
-    ModelSpecification,
-    DecisionTree,
-    DecisionTreeHyperParameters,
-    RandomForest,
-    RandomForestHyperParameters,
-    LogisticRegression,
-    LogisticRegressionHyperParameters,
-)
+from dsr_feature_eng_ml.evaluation.audit_pdf_renderer import AuditPDFRenderer
 
 __all__ = [
-    "F1_FORMAT",
-    "REPORT_WIDTH",
-    "DEFAULT_VIABLE_F1_GAP",
-    "DEFAULT_ACCEPTABLE_GAP",
-    "DEFAULT_LARGE_GAP",
-    "ModelGeneralization",
-    "ModelType",
-    "ModelBalancing",
-    "ModelEvaluationMethod",
-    "ModelConfigurationSortOrder",
-    "DataSplits",
-    "ValidationResults",
-    "ModelFeatureImportance",
-    "ModelConfiguration",
-    "ModelEvaluation",
-    "ModelEvaluationConfig",
-    "ModelResults",
-    "BestModelResults",
-    "ModelSpecification",
-    "DecisionTree",
-    "DecisionTreeHyperParameters",
-    "RandomForest",
-    "RandomForestHyperParameters",
-    "LogisticRegression",
-    "LogisticRegressionHyperParameters",
+    "validate_n_jobs",
+    "check_memory_risk",
+    "ModelTypeTuningMultiplier",
+    "PlotFileName",
+    "ModelTypeTaskType",
+    "ModelTypeData",
+    "ModelEnumSortOrder",
+    "TaskTypeSortOrder",
+    "ModelTypeDataRecType",
+    "AuditPDFRenderer",
 ]
-
-__version__ = "0.0.1"

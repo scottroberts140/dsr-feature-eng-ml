@@ -91,6 +91,53 @@ The library uses a modular approach:
 - `enums.py`: Enumeration types for model states and configurations
 - `constants.py`: Global configuration and defaults
 
+## Preferences and Overrides
+
+You can override library defaults (like constants used in evaluation and reporting) without changing code in the library.
+
+**Precedence (highest to lowest)**
+- Runtime override via `set_pref()`
+- Environment variables prefixed with `DSR_FEML_`
+- User config file in `~/.config/dsr-feature-eng-ml/config.toml` or `~/Library/Application Support/dsr-feature-eng-ml/config.toml`
+- Project-level `./dsr_feature_eng_ml.toml`
+- In-library default value
+
+**Examples**
+- Runtime (Python):
+    ```python
+    from dsr_feature_eng_ml import set_pref
+    set_pref("REPORT_WIDTH", 120)
+    set_pref("SCORE_FORMAT", ".3f")
+    ```
+- Environment (shell):
+    ```bash
+    export DSR_FEML_REPORT_WIDTH=120
+    export DSR_FEML_SCORE_FORMAT=.3f
+    export DSR_FEML_DEFAULT_ACCEPTABLE_GAP=0.03
+    ```
+- Config file (TOML):
+    ```toml
+    [constants]
+    REPORT_WIDTH = 120
+    SCORE_FORMAT = ".3f"
+    DEFAULT_ACCEPTABLE_GAP = 0.03
+    ```
+
+**How it works**
+- `constants.py` defines defaults and resolves effective values through the preferences system:
+    ```python
+    from dsr_feature_eng_ml.preferences import resolve_constant
+    SCORE_FORMAT = resolve_constant("SCORE_FORMAT", ".4f")
+    REPORT_WIDTH = resolve_constant("REPORT_WIDTH", 100)
+    ```
+- Most code should continue to import these constants (e.g., `from dsr_feature_eng_ml import REPORT_WIDTH`).
+
+**Should I call `resolve_constant()` directly?**
+- No for typical usage: import constants as usual, they already reflect preferences at import time.
+- Yes if you need late-binding (e.g., react to `set_pref()` after modules are imported). In that case, call `get_pref("REPORT_WIDTH", 100)` or `resolve_constant("REPORT_WIDTH", 100)` where you need the value.
+
+This keeps defaults centralized while giving users clean override hooks at runtime, via environment, or via config files.
+
 ## License
 
 MIT License - see LICENSE file for details

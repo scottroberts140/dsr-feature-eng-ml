@@ -1,7 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Union, Optional, Literal, Type
-import numpy as np
+from typing import Optional, Literal, Type
 from dsr_feature_eng_ml.enums import (
     ModelType,
     BalancingStrategy,
@@ -16,62 +15,51 @@ from dsr_feature_eng_ml.models.model_specification import (
 from dsr_feature_eng_ml.evaluation.schema import DataSplits
 from dsr_feature_eng_ml.preferences import prefs
 from dsr_utils import format_label_value_pairs
-from sklearn.linear_model import LogisticRegression as SklearnLogisticRegression
+from sklearn.linear_model import Ridge as SklearnRidge
 
 
 @dataclass(frozen=True)
-class LogisticRegressionParams(ModelParams):
-    penalty: Literal["l1", "l2", "elasticnet", None] = "l2"
-    C: float = 1.0
+class RidgeParams(ModelParams):
+    alpha: float = 1.0
+    fit_intercept: bool = True
+    copy_X: bool = True
+    max_iter: Optional[int] = None
+    tol: float = 1e-4
     solver: Literal[
-        "lbfgs", "liblinear", "newton-cg", "newton-cholesky", "sag", "saga"
-    ] = "lbfgs"
-    max_iter: int = 100
-    class_weight: Optional[Union[dict, str]] = None
-    l1_ratio: Optional[float] = None  # Only used if penalty='elasticnet'
+        "auto", "svd", "cholesky", "lsqr", "sparse_cg", "sag", "saga", "lbfgs"
+    ] = "auto"
     random_state: Optional[int] = None
-    task_type: TaskType = TaskType.CLASSIFICATION
-    scoring: ScoringMetric = ScoringMetric.F1
+    task_type: TaskType = TaskType.REGRESSION
+    scoring: ScoringMetric = ScoringMetric.R2
 
     def info(self) -> str:
         data = [
-            ("Penalty (Regularization)", f"{self.penalty}"),
-            ("C (Inverse Strength)", f"{self.C}"),
+            ("Alpha (Penalty)", f"{self.alpha}"),
             ("Solver", f"{self.solver}"),
-            ("Max Iterations", f"{self.max_iter}"),
-            ("Class Weight", f"{self.class_weight}"),
+            ("Fit Intercept", f"{self.fit_intercept}"),
+            ("Tolerance", f"{self.tol}"),
             ("Task Type", f"{self.task_type}"),
             ("Scoring", f"{self.scoring}"),
         ]
-        # Include l1_ratio only if relevant to the penalty type
-        if self.penalty == "elasticnet":
-            data.insert(2, ("L1 Ratio", f"{self.l1_ratio}"))
-
         return format_label_value_pairs(data)
 
     @staticmethod
     def get_standard_search_grid(narrow: bool = True) -> dict[str, list]:
+        # Regularization strength is best explored logarithmically
         if narrow:
-            grid = {"C": [0.1, 1.0, 10.0], "penalty": ["l2"], "solver": ["lbfgs"]}
-        else:
-            grid = {
-                "C": [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0],
-                "penalty": ["l1", "l2"],
-                "solver": ["liblinear", "saga"],
-                "max_iter": [100, 500, 1000],
-            }
-        return grid
+            return {"alpha": [0.1, 1.0, 10.0, 100.0]}
+
+        # Expanded grid covers a much wider range of penalty strengths
+        return {"alpha": [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]}
 
 
-class LogisticRegression(
-    ModelSpecification[LogisticRegressionParams, SklearnLogisticRegression]
-):
+class RidgeRegression(ModelSpecification[RidgeParams, SklearnRidge]):
     def get_estimator_class(
         self,
-    ) -> Type[SklearnLogisticRegression]:
-        return SklearnLogisticRegression
+    ) -> Type[SklearnRidge]:
+        return SklearnRidge
 
-    params_class = LogisticRegressionParams
+    params_class = RidgeParams
 
     @property
     def task_type(self) -> TaskType:
@@ -90,21 +78,21 @@ class LogisticRegression(
         return self._model_type
 
     @property
-    def model_dials(self) -> LogisticRegressionParams:
+    def model_dials(self) -> RidgeParams:
         return self._model_dials
 
     @model_dials.setter
-    def model_dials(self, value: LogisticRegressionParams) -> None:
+    def model_dials(self, value: RidgeParams) -> None:
         self._model_dials = value
 
     def __init__(
         self,
         cv: Optional[int],
         balancing_strategy: BalancingStrategy,
-        params: Optional[LogisticRegressionParams] = None,
-        task_type: TaskType = TaskType.CLASSIFICATION,
-        scoring: ScoringMetric = ScoringMetric.F1,
-        n_jobs: int = 3,
+        params: Optional[RidgeParams] = None,
+        task_type: TaskType = TaskType.REGRESSION,
+        scoring: ScoringMetric = ScoringMetric.R2,
+        n_jobs: int = -1,
         n_iter: int = -1,
         acceptable_gap: float = prefs.acceptable_gap,
         large_gap: float = prefs.large_gap,
@@ -113,13 +101,13 @@ class LogisticRegression(
         # Use provided params or fall back to defaults
         # We ensure the data's random_state is used if not specified in params
         if params is None:
-            params = LogisticRegressionParams(
+            params = RidgeParams(
                 task_type=task_type,
                 random_state=1,
             )
 
         self._model_dials = params
-        self._task_type = TaskType.CLASSIFICATION
+        self._task_type = TaskType.REGRESSION
         self._scoring = self.model_dials.scoring
 
         super().__init__(
@@ -131,22 +119,21 @@ class LogisticRegression(
             large_gap=large_gap,
         )
 
-        self._model_type = ModelType.LOGISTIC_REGRESSION
+        self._model_type = ModelType.RIDGE
         self.optimization_strategy = optimization_strategy
         self.estimator = self.create_estimator()
 
     def create_estimator(
-        self, parameters: Optional[LogisticRegressionParams] = None
-    ) -> SklearnLogisticRegression:
-        # Use the provided parameters if they exist, otherwise use the instance dials
+        self, parameters: Optional[RidgeParams] = None
+    ) -> SklearnRidge:
         params = parameters or self.model_dials
 
-        return SklearnLogisticRegression(
-            penalty=params.penalty,
-            C=params.C,
-            solver=params.solver,
+        return SklearnRidge(
+            alpha=params.alpha,
+            fit_intercept=params.fit_intercept,
+            copy_X=params.copy_X,
             max_iter=params.max_iter,
+            tol=params.tol,
+            solver=params.solver,
             random_state=params.random_state,
-            class_weight=params.class_weight,
-            l1_ratio=params.l1_ratio,
         )
