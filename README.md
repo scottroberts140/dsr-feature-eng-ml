@@ -1,8 +1,8 @@
 # dsr-feature-eng-ml
 
-[![PyPI version](https://img.shields.io/pypi/v/dsr-feature-eng-ml.svg)](https://pypi.org/project/dsr-feature-eng-ml/)
-[![Python versions](https://img.shields.io/pypi/pyversions/dsr-feature-eng-ml.svg)](https://pypi.org/project/dsr-feature-eng-ml/)
-[![License](https://img.shields.io/pypi/l/dsr-feature-eng-ml.svg)](https://pypi.org/project/dsr-feature-eng-ml/)
+[![PyPI version](https://img.shields.io/pypi/v/dsr-feature-eng-ml.svg?cacheSeconds=300)](https://pypi.org/project/dsr-feature-eng-ml/)
+[![Python versions](https://img.shields.io/pypi/pyversions/dsr-feature-eng-ml.svg?cacheSeconds=300)](https://pypi.org/project/dsr-feature-eng-ml/)
+[![License](https://img.shields.io/pypi/l/dsr-feature-eng-ml.svg?cacheSeconds=300)](https://pypi.org/project/dsr-feature-eng-ml/)
 [![Changelog](https://img.shields.io/badge/changelog-available-blue.svg)](https://github.com/scottroberts140/dsr-feature-eng-ml/releases)
 
 Comprehensive machine learning model evaluation and feature engineering framework.
