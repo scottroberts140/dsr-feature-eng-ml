@@ -1,3 +1,5 @@
+"""Lasso regression model specification and parameter definitions."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Literal, Type
@@ -20,6 +22,8 @@ from sklearn.linear_model import Lasso as SklearnLasso
 
 @dataclass(frozen=True)
 class LassoParams(ModelParams):
+    """Hyperparameters for Lasso regression models."""
+
     alpha: float = 1.0
     fit_intercept: bool = True
     copy_X: bool = True
@@ -48,6 +52,22 @@ class LassoParams(ModelParams):
 
     @staticmethod
     def get_standard_search_grid(narrow: bool = True) -> dict[str, list]:
+        """Generate a standard hyperparameter search grid for Lasso Regression.
+
+        Uses smaller alpha values for fine-grained regularization control in
+        the expanded grid.
+
+        Args:
+            narrow (bool, optional): If True (default), returns a compact grid.
+                If False, returns a wider grid with smaller alphas.
+
+        Returns:
+            dict[str, list]: Parameter grid mapping ``alpha`` to candidate values.
+
+        Example:
+            >>> narrow_grid = LassoParams.get_standard_search_grid()
+            >>> expanded_grid = LassoParams.get_standard_search_grid(narrow=False)
+        """
         # Lasso often needs a finer search at lower alpha values
         if narrow:
             return {"alpha": [0.01, 0.1, 1.0, 10.0]}
@@ -55,6 +75,8 @@ class LassoParams(ModelParams):
 
 
 class LassoRegression(ModelSpecification[LassoParams, SklearnLasso]):
+    """Lasso regression model specification."""
+
     def get_estimator_class(
         self,
     ) -> Type[SklearnLasso]:

@@ -1,6 +1,15 @@
 # dsr-feature-eng-ml
 
+[![PyPI version](https://img.shields.io/pypi/v/dsr-feature-eng-ml.svg)](https://pypi.org/project/dsr-feature-eng-ml/)
+[![Python versions](https://img.shields.io/pypi/pyversions/dsr-feature-eng-ml.svg)](https://pypi.org/project/dsr-feature-eng-ml/)
+[![License](https://img.shields.io/pypi/l/dsr-feature-eng-ml.svg)](https://pypi.org/project/dsr-feature-eng-ml/)
+[![Changelog](https://img.shields.io/badge/changelog-available-blue.svg)](https://github.com/scottroberts140/dsr-feature-eng-ml/releases)
+
 Comprehensive machine learning model evaluation and feature engineering framework.
+
+**Version 1.0.0**: This release is breaking and not backward-compatible with prior 0.x versions.
+
+**Release scope**: Regression workflows have been tested. Classification workflows are implemented but not yet tested; a follow-up release will expand validation and coverage.
 
 ## Features
 
@@ -76,12 +85,13 @@ Orchestrates comprehensive model evaluation:
 
 ## Requirements
 
-- Python >= 3.9
+- Python >= 3.10
 - pandas
 - numpy
-- scikit-learn >= 1.0
-- dsr-data-tools
-- dsr-utils
+- scikit-learn >= 1.5.0
+- seaborn >= 0.13.0
+- dsr-data-tools >= 1.0.0
+- dsr-utils >= 1.0.0
 
 ## Architecture
 

@@ -1,3 +1,5 @@
+"""Base model specification and shared training utilities."""
+
 from __future__ import annotations
 from abc import ABC, abstractmethod
 import dataclasses
@@ -176,24 +178,24 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
     Attributes:
         estimator_class (Callable[..., T_Estimator]): Sklearn estimator class reference (e.g., DecisionTreeClassifier).
         params_class (Type[T_Params]): ModelParams subclass for hyperparameter configuration.
-        data_splits (DataSplits): Train/validation/test data splits.
         cv (int): Number of cross-validation folds.
-        class_weight (Optional[Union[Mapping[str, float], str]]): Class weights.
+        balancing_strategy (BalancingStrategy): Strategy for class balancing.
         scoring (ScoringMetric): Scoring metric for model evaluation.
         n_jobs (int): Number of parallel jobs (-1 for all CPUs).
         n_iter (int): Number of iterations for randomized search.
+        max_iter (int): Max iterations for estimators that support it.
         task_type (TaskType): Type of ML task (default: TaskType.CLASSIFICATION).
-        hyper_parameters (HyperParameters): Model-specific hyperparameters container.
+        model_dials (T_Params): Model-specific hyperparameter container.
         predicted_train (pd.Series): Training set predictions (modified during evaluation).
         predicted_val (pd.Series): Validation set predictions (modified during evaluation).
+        optimization_strategy (OptimizationStrategy): Manual vs randomized search.
 
     Example:
         >>> # Cannot instantiate directly - use subclasses
         >>> dtree = DecisionTree(
-        ...     data_splits=splits,
         ...     cv=5,
-        ...     param_grid={'max_depth': [10, 20]},
-        ...     class_weight='balanced'
+        ...     balancing_strategy=BalancingStrategy.NONE,
+        ...     task_type=TaskType.CLASSIFICATION,
         ... )
 
     Note:
@@ -201,56 +203,39 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         Subclasses inherit shared functionality while implementing model-specific behavior.
     """
 
-    # @dataclass
-    # class ModelScores:
-    #     score_train: Optional[float] = None
-    #     score_val: Optional[float] = None
-    #     score_val_cleaned: Optional[float] = None
-    #     score_test: Optional[float] = None
-    #     mae_train: Optional[float] = None
-    #     mae_val: Optional[float] = None
-    #     mae_test: Optional[float] = None
-    #     mse_train: Optional[float] = None
-    #     mse_val: Optional[float] = None
-    #     mse_test: Optional[float] = None
-    #     r2_train: Optional[float] = None
-    #     r2_val: Optional[float] = None
-    #     r2_val_cleaned: Optional[float] = None
-    #     r2_test: Optional[float] = None
-    #     accuracy_train: Optional[float] = None
-    #     accuracy_val: Optional[float] = None
-    #     accuracy_val_cleaned: Optional[float] = None
-    #     accuracy_test: Optional[float] = None
-    #     preds: Optional[pd.Series] = None
-    #     probs: Optional[pd.DataFrame] = None
-
     params_class: Type[T_Params]
 
     @abstractmethod
     def get_estimator_class(self) -> Type[T_Estimator]:
+        """Return the sklearn estimator class for this model."""
         pass
 
     @property
     @abstractmethod
     def task_type(self) -> TaskType:
+        """Return the model task type (classification or regression)."""
         pass
 
     @property
     @abstractmethod
     def scoring(self) -> ScoringMetric:
+        """Return the scoring metric used for evaluation."""
         pass
 
     @scoring.setter
     @abstractmethod
     def scoring(self, value: ScoringMetric):
+        """Set the scoring metric used for evaluation."""
         pass
 
     @property
     def num_candidates(self) -> int:
+        """Return the number of hyperparameter candidates to evaluate."""
         return self.model_dials.num_candidates
 
     @property
     def total_fits(self) -> int:
+        """Return the total number of estimator fits for the search."""
         from dsr_utils.formatting import format_label_value_pairs
 
         cv_count = self.cv if self.cv is not None else 5
@@ -277,6 +262,19 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         large_gap: float = prefs.large_gap,
         optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
     ):
+        """Initialize shared model configuration parameters.
+
+        Args:
+            cv: Number of CV folds to use.
+            balancing_strategy: Resampling/weighting strategy.
+            params: Optional model parameter object.
+            n_jobs: Parallel job count.
+            n_iter: Iterations for randomized search (-1 for auto).
+            max_iter: Max estimator iterations where supported.
+            acceptable_gap: Gap threshold for marginal generalization.
+            large_gap: Gap threshold for overfit generalization.
+            optimization_strategy: Manual, grid, or randomized search.
+        """
         self.cv = cv
         self.balancing_strategy = balancing_strategy
         valid_metrics = ScoringMetric.get_valid_metrics(self.task_type)
@@ -319,6 +317,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
 
     @property
     def feature_importances(self) -> Optional[np.ndarray]:
+        """Return feature importance values if the estimator exposes them."""
         if self.estimator is None:
             return None
 
@@ -340,6 +339,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
 
     @abstractmethod
     def create_estimator(self, parameters: Optional[T_Params] = None) -> T_Estimator:
+        """Create a configured estimator instance from parameters."""
         pass
 
     def is_probabilistic(self, estimator: Any) -> TypeGuard[ProbabilisticClassifier]:
@@ -389,6 +389,21 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         max_sample_size: Optional[int] = None,
         perform_memory_check: bool = True,
     ) -> Tuple[T_Params, float, bool, float, float, float, float]:
+        """Run hyperparameter search and update model parameters.
+
+        Args:
+            data_splits: Train/validation splits used for tuning.
+            method: Optimization strategy (grid or random search).
+            features_to_fit_set: Feature metadata set used to select columns.
+            custom_grid: Optional search grid override.
+            use_combined_data: If True, tune on train+val combined.
+            max_sample_size: Optional cap on rows for faster tuning.
+            perform_memory_check: If True, estimate memory risk before tuning.
+
+        Returns:
+            Tuple of (best_params, best_score, risk_triggered, available_gb,
+            estimated_peak_gb, model_multiplier, sampling_factor).
+        """
         if use_combined_data:
             # Combine the already-scaled features and targets
             features = pd.concat([data_splits.train_features, data_splits.val_features])
@@ -563,6 +578,16 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         features_to_fit_set: set[FeatureMetadata],
         use_combined_data: bool = False,
     ) -> Tuple[float, float]:
+        """Fit the estimator and return memory usage stats.
+
+        Args:
+            data_splits: Train/validation splits used for fitting.
+            features_to_fit_set: Feature metadata used to select input columns.
+            use_combined_data: If True, fit on train+val combined data.
+
+        Returns:
+            Tuple of (memory_used_bytes, peak_rss_bytes).
+        """
         # 1. Get the data (Resampled if OVERSAMPLED/UNDERSAMPLED, otherwise original)
         X, y = data_splits.get_balanced_train_data(
             strategy=self.balancing_strategy,
@@ -597,9 +622,19 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         filter_outliers: bool = False,
         outlier_count: int = prefs.default_worst_errors_n,
     ) -> ModelConfiguration:
-        """
-        The 'Salami Slice' orchestrator: Fits the model and returns
-        the full performance configuration.
+        """Fit the model and return a validation-scored configuration.
+
+        Args:
+            data_splits: Train/validation splits.
+            id: Identifier for the resulting configuration.
+            features_to_fit_set: Feature metadata used to select input columns.
+            score_cv: Optional CV score to include in the config.
+            use_combined_data: If True, fit on train+val combined data.
+            filter_outliers: If True, remove worst errors for cleaned metrics.
+            outlier_count: Number of worst errors to treat as outliers.
+
+        Returns:
+            A `ModelConfiguration` populated with validation metrics and stats.
         """
         # 1. Action: Fit the model
         mem_used, mem_peak = self.fit(
@@ -628,6 +663,17 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         filter_outliers: bool,
         outlier_count: int,
     ) -> Tuple[float, Optional[float], pd.Series, pd.DataFrame]:
+        """Compute classification scores and prediction outputs.
+
+        Args:
+            features: Feature matrix for scoring.
+            targets: Ground-truth labels.
+            filter_outliers: If True, drop the most confident incorrect predictions.
+            outlier_count: Number of outliers to remove when filtering.
+
+        Returns:
+            Tuple of (f1, f1_cleaned, preds, probs).
+        """
         prob_estimator = cast(ProbabilisticClassifier, self.estimator)
 
         # 1. Get discrete predictions and probabilities
@@ -678,7 +724,17 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         filter_outliers: bool,
         outlier_count: int,
     ) -> tuple[float, float, float, Optional[float], pd.Series]:
-        """Calculates MAE, MSE, and R2 for regression tasks."""
+        """Compute regression metrics and predictions.
+
+        Args:
+            features: Feature matrix for scoring.
+            targets: Ground-truth targets.
+            filter_outliers: If True, drop largest absolute errors.
+            outlier_count: Number of outliers to remove when filtering.
+
+        Returns:
+            Tuple of (mae, mse, r2, r2_cleaned, preds).
+        """
         # Generate predictions internally to ensure index matching
         raw_preds = self.estimator.predict(features)
         preds = pd.Series(raw_preds, index=targets.index)
@@ -716,26 +772,25 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         filter_outliers: bool = False,
         outlier_count: int = prefs.default_worst_errors_n,
     ) -> ModelConfiguration:
-        """Evaluate model performance and generate configuration with metrics.
+        """Evaluate validation performance and build a ModelConfiguration.
 
-        Calculates task-specific performance metrics based on the model's task type:
-        - Classification: confusion matrix, precision, recall, F1 score
-        - Regression: MAE, MSE, RMSE, R-squared
+        Computes task-specific metrics and attaches feature importance and
+        distribution stats.
 
         Args:
-            model_type (ModelType): Type of model being evaluated.
-            model_balancing (ModelBalancing): Balancing strategy used.
-            evaluation_method (ModelEvaluationMethod): Evaluation method used.
-            params (dict): Model hyperparameters.
-            df (pd.Series): True target values for comparison.
-            include_in_report (bool): Whether to print detailed metrics report.
+            data_splits: Train/validation splits used for evaluation.
+            id: Identifier for the resulting configuration.
+            features_to_fit_set: Feature metadata used to select columns.
+            mem_used: Bytes used during fit.
+            mem_peak: Peak RSS bytes during fit.
+            use_combined_data: If True, model was fit on train+val combined data.
+            params: Optional params override (defaults to `model_dials`).
+            score_cv: Optional CV score to include.
+            filter_outliers: If True, compute cleaned metrics by dropping worst errors.
+            outlier_count: Number of outliers to drop.
 
         Returns:
-            tuple: (ModelConfiguration with evaluation results, formatted report text)
-
-        Note:
-            For classification: Returns F1 score as validation score.
-            For regression: Returns negative MAE as validation score (higher is better).
+            Populated `ModelConfiguration` with validation metrics and stats.
         """
         from dsr_feature_eng_ml.evaluation.schema import ModelConfiguration
 
@@ -878,6 +933,16 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         config: ModelConfiguration,
         features_to_fit_set: set[FeatureMetadata],
     ) -> ModelConfiguration:
+        """Evaluate test-set performance and return an updated configuration.
+
+        Args:
+            data_splits: Train/validation/test splits.
+            config: Existing configuration to update with test metrics.
+            features_to_fit_set: Feature metadata used to select columns.
+
+        Returns:
+            Updated `ModelConfiguration` with test metrics and stats.
+        """
         from dsr_feature_eng_ml.evaluation import (
             ModelConfigurationStats,
             SplitType,
@@ -1000,7 +1065,14 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
     def analyze_feature_importance(
         self, features_to_fit_set: set[FeatureMetadata]
     ) -> ModelFeatureImportance:
-        """Creates the analysis object from the current fitted estimator."""
+        """Create feature-importance analysis from the current estimator.
+
+        Args:
+            features_to_fit_set: Feature metadata used to map importances.
+
+        Returns:
+            `ModelFeatureImportance` instance (empty if unsupported).
+        """
         from dsr_feature_eng_ml.evaluation.schema import ModelFeatureImportance
 
         importances = self.feature_importances
@@ -1022,7 +1094,20 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         task_type: TaskType,
         **kwargs,
     ) -> ModelSpecification:
-        """Instantiates a single model specification."""
+        """Instantiate a model specification with shared initialization args.
+
+        Args:
+            model_cls: Concrete model specification class.
+            strategy: Balancing strategy.
+            params: Optional params instance to pass through.
+            cv: Cross-validation fold count.
+            optimization_strategy: Grid/random/manual strategy.
+            task_type: Task type for the model.
+            **kwargs: Additional constructor args.
+
+        Returns:
+            Instantiated model specification.
+        """
         init_kwargs = {
             "balancing_strategy": strategy,
             "params": params,
@@ -1037,7 +1122,14 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
     def create_model_from_config(
         cls, config: ModelConfiguration
     ) -> Optional[ModelSpecification]:
-        """Instantiates a model instance from a ModelConfiguration object."""
+        """Instantiate a model instance from a ModelConfiguration.
+
+        Args:
+            config: Configuration containing model type and parameters.
+
+        Returns:
+            Model instance or None if the type is not resolvable.
+        """
         # Find the corresponding class from the model_type enum
         model_cls = config.model_type.model_class
 

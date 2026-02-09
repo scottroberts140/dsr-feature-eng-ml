@@ -1,3 +1,5 @@
+"""Logistic regression model specification and parameter definitions."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Union, Optional, Literal, Type
@@ -21,6 +23,8 @@ from sklearn.linear_model import LogisticRegression as SklearnLogisticRegression
 
 @dataclass(frozen=True)
 class LogisticRegressionParams(ModelParams):
+    """Hyperparameters for logistic regression models."""
+
     penalty: Literal["l1", "l2", "elasticnet", None] = "l2"
     C: float = 1.0
     solver: Literal[
@@ -51,6 +55,23 @@ class LogisticRegressionParams(ModelParams):
 
     @staticmethod
     def get_standard_search_grid(narrow: bool = True) -> dict[str, list]:
+        """Generate a standard hyperparameter search grid for Logistic Regression.
+
+        The narrow grid targets common defaults, while the expanded grid
+        explores broader regularization strengths and solvers.
+
+        Args:
+            narrow (bool, optional): If True (default), returns a compact grid.
+                If False, returns an expanded grid.
+
+        Returns:
+            dict[str, list]: Parameter grid mapping C/penalty/solver (and max_iter
+            in expanded mode) to candidate values.
+
+        Example:
+            >>> narrow_grid = LogisticRegressionParams.get_standard_search_grid()
+            >>> expanded_grid = LogisticRegressionParams.get_standard_search_grid(narrow=False)
+        """
         if narrow:
             grid = {"C": [0.1, 1.0, 10.0], "penalty": ["l2"], "solver": ["lbfgs"]}
         else:
@@ -66,6 +87,8 @@ class LogisticRegressionParams(ModelParams):
 class LogisticRegression(
     ModelSpecification[LogisticRegressionParams, SklearnLogisticRegression]
 ):
+    """Logistic regression model specification."""
+
     def get_estimator_class(
         self,
     ) -> Type[SklearnLogisticRegression]:

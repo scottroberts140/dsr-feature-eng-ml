@@ -20,6 +20,8 @@ from dsr_utils.formatting import (
 
 @dataclass
 class ModelColor:
+    """Container for primary and secondary model colors."""
+
     solid: str  # For "Actual" bars and Scatter dots
     light: str  # For "Potential" shadow bars
 
@@ -74,6 +76,8 @@ class Preferences:
 
     @dataclass
     class ModelQuality:
+        """Display attributes for model quality tiers."""
+
         score_min: float
         text: str
         text_weight: str
@@ -98,6 +102,7 @@ class Preferences:
             )
 
     def get_model_quality(self, quality_score: float) -> Preferences.ModelQuality:
+        """Map a numeric quality score to a quality tier."""
         if quality_score >= self.model_quality["high"].score_min:
             return self.model_quality["high"]
         elif quality_score < self.model_quality["average"].score_min:
@@ -107,6 +112,8 @@ class Preferences:
 
     @dataclass
     class ModelRecommendation:
+        """Recommendation text and color based on audit outcomes."""
+
         action: str
         color: str
 
@@ -141,6 +148,7 @@ class Preferences:
         is_efficient: bool,
         is_acceptable: bool,
     ):
+        """Select a recommendation based on accuracy, stability, and efficiency."""
         if is_accurate and is_stable:
             return self.model_recommendation["proceed_to_deployment"]
 
@@ -166,10 +174,12 @@ class Preferences:
 
     @property
     def cv_verbose(self) -> int:
+        """Verbosity level for CV/tuning output (0-3)."""
         return self._cv_verbose
 
     @cv_verbose.setter
     def cv_verbose(self, value: int):
+        """Clamp and set CV verbosity to the range 0-3."""
         if value < 0:
             self._cv_verbose = 0
         elif value > 3:
@@ -179,33 +189,41 @@ class Preferences:
 
     @property
     def n_jobs(self) -> int:
+        """Effective parallel job count after validation."""
         return self._n_jobs
 
     @n_jobs.setter
     def n_jobs(self, value: int):
+        """Validate and set parallel job count."""
         self._n_jobs = validate_n_jobs(value)
 
     @property
     def currency_format(self) -> CurrencyFormat:
+        """Formatter for currency values."""
         return self._currency_format
 
     @property
     def score_format(self) -> FloatFormat:
+        """Formatter for score values."""
         return self._score_format
 
     @property
     def gb_format(self) -> DataFormat:
+        """Formatter for memory sizes in GB."""
         return self._gb_format
 
     @property
     def train_time_format(self) -> FloatFormat:
+        """Formatter for training durations."""
         return self._train_time_format
 
     @property
     def drift_format(self) -> PercentageFormat:
+        """Formatter for drift percentages."""
         return self._drift_format
 
     def _build_model_colors(self) -> dict[str, ModelColor]:
+        """Construct the default model color palette."""
         from dsr_feature_eng_ml.enums import ModelType
 
         return {
@@ -244,24 +262,30 @@ class Preferences:
 
     @property
     def model_colors(self) -> dict[str, ModelColor]:
+        """Lazily initialized model color palette."""
         if not hasattr(self, "_model_colors"):
             self._model_colors = self._build_model_colors()
         return self._model_colors
 
     def get_color(self, model_name: str, shadow: bool = False) -> str:
+        """Return the primary or shadow color for a model name."""
         color_obj = self.model_colors.get(model_name, prefs.get_default_color())
         return color_obj.light if shadow else color_obj.solid
 
     def get_solid_palette(self):
+        """Return a palette of solid colors keyed by model name."""
         return {name: color.solid for name, color in self.model_colors.items()}
 
     def get_light_palette(self):
+        """Return a palette of light colors keyed by model name."""
         return {name: color.light for name, color in self.model_colors.items()}
 
     def get_default_color(self):
+        """Return the fallback model color pair."""
         return ModelColor("#333333", "#999999")
 
     def __post_init__(self):
+        """Initialize default formats, palettes, and style settings."""
         # Initialize the backing variables for the properties
         # This ensures the defaults are applied on the very first import
         self.n_jobs = -1  # Triggers the setter to calculate CPU count
@@ -285,6 +309,7 @@ class Preferences:
         }
 
     def __new__(cls, *args, **kwargs):
+        """Singleton constructor for Preferences."""
         if not cls._instance:
             cls._instance = super(Preferences, cls).__new__(cls)
         return cls._instance
@@ -313,10 +338,12 @@ class Preferences:
                 raise AttributeError(f"'{key}' is not a valid preference.")
 
     def save_to_json(self, path: str | Path) -> None:
+        """Persist preferences to a JSON file."""
         with open(path, "w") as f:
             json.dump(asdict(self), f, indent=4)
 
     def load_from_json(self, path: str | Path) -> None:
+        """Load preferences from a JSON file."""
         with open(path, "r") as f:
             data = json.load(f)
             self.update(**data)
@@ -331,6 +358,7 @@ class Preferences:
         self.__post_init__()  # Re-trigger the property setters
 
     def get_penalty_multiplier_for_task_type(self, task_type: TaskType) -> int:
+        """Return the data quality penalty multiplier for a task type."""
         return (
             self.classification_data_quality_penalty_multiplier
             if task_type == TaskType.CLASSIFICATION
@@ -402,6 +430,7 @@ class Preferences:
         )
 
     def get_hyperparmeter_display_name(self, raw_name: str) -> str:
+        """Return a short display name for a hyperparameter."""
         return self.hp_short_names.get(raw_name, raw_name.replace("_", " ").title())
 
 

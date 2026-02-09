@@ -1,3 +1,5 @@
+"""Ridge regression model specification and parameter definitions."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Literal, Type
@@ -20,6 +22,8 @@ from sklearn.linear_model import Ridge as SklearnRidge
 
 @dataclass(frozen=True)
 class RidgeParams(ModelParams):
+    """Hyperparameters for ridge regression models."""
+
     alpha: float = 1.0
     fit_intercept: bool = True
     copy_X: bool = True
@@ -45,6 +49,24 @@ class RidgeParams(ModelParams):
 
     @staticmethod
     def get_standard_search_grid(narrow: bool = True) -> dict[str, list]:
+        """Generate a standard hyperparameter search grid for Ridge Regression.
+
+        Provides a small, logarithmic grid for quick tuning, or an expanded
+        grid that spans multiple orders of magnitude.
+
+        Args:
+            narrow (bool, optional): If True (default), returns a compact grid
+                for quick searches. If False, returns a wider grid.
+
+        Returns:
+            dict[str, list]: Parameter grid mapping ``alpha`` to candidate values.
+                - narrow=True: alpha [0.1, 1.0, 10.0, 100.0]
+                - narrow=False: alpha [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+
+        Example:
+            >>> narrow_grid = RidgeParams.get_standard_search_grid()
+            >>> expanded_grid = RidgeParams.get_standard_search_grid(narrow=False)
+        """
         # Regularization strength is best explored logarithmically
         if narrow:
             return {"alpha": [0.1, 1.0, 10.0, 100.0]}
@@ -54,6 +76,8 @@ class RidgeParams(ModelParams):
 
 
 class RidgeRegression(ModelSpecification[RidgeParams, SklearnRidge]):
+    """Ridge regression model specification."""
+
     def get_estimator_class(
         self,
     ) -> Type[SklearnRidge]:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsr-feature-eng-ml"
-version = "0.1.0"
+version = "1.0.0"
 description = "Machine learning-specific feature engineering utilities including models and evaluation tools."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,12 +24,13 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "dsr-utils>=0.0.1",
-    "dsr-data-tools>=0.0.1",
+    "dsr-utils>=1.0.0",
+    "dsr-data-tools>=1.0.0",
     "numpy>=2.0.0",
     "pandas>=2.0.0",
     "scikit-learn>=1.5.0",
     "matplotlib>=3.5.0",
+    "seaborn>=0.13.0",
 ]
 
 [project.optional-dependencies]

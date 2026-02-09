@@ -1,3 +1,5 @@
+"""PDF rendering utilities for model audit reports."""
+
 from __future__ import annotations
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -70,8 +72,13 @@ from dsr_utils.matplotlib import get_artist_bbox
 
 
 class AuditPDFRenderer:
+    """Render a multi-page PDF report for a `ModelAuditSummary`."""
+
     class Model:
+        """Convenience wrapper for computed model summary fields."""
+
         def __init__(self, model: ModelConfiguration, data_splits: DataSplits):
+            """Precompute key model indicators used by the report."""
             self.model = model
             self.model_quality = prefs.get_model_quality(model.quality_score)
             quality_score_format = ValueDescFormat(
@@ -100,6 +107,12 @@ class AuditPDFRenderer:
         summary: ModelAuditSummary,
         report_title: str = "Model Audit Report",
     ):
+        """Initialize the PDF renderer for a specific audit summary.
+
+        Args:
+            summary: Completed audit summary with results.
+            report_title: Title shown throughout the report.
+        """
         self.summary = summary
         self.report_title = report_title
 
@@ -249,6 +262,7 @@ class AuditPDFRenderer:
         page_name: str,
         print_page_name: bool = True,
     ) -> None:
+        """Render the standard page header for a report page."""
         fig = pdf_page.fig
         # print(page_name)
         pc = self.pdf_doc._page_configuration
@@ -300,6 +314,7 @@ class AuditPDFRenderer:
         fig.add_artist(line)
 
     def _draw_page_footer(self, pdf_page: PDFDocument.Page) -> None:
+        """Render the standard footer with hardware context and quality tag."""
         fig = pdf_page.fig
         fig.text(
             0.05,
@@ -328,6 +343,7 @@ class AuditPDFRenderer:
         )
 
     def _render_title_page(self) -> None:
+        """Render the cover/title page for the report."""
         if not self.results:
             return
 
@@ -438,6 +454,7 @@ class AuditPDFRenderer:
     def _get_risk_profile(
         self,
     ) -> str:
+        """Generate a human-readable risk profile summary."""
         risks = []
         model = self.best_model.model
 
@@ -490,6 +507,7 @@ class AuditPDFRenderer:
         top_y: float,
         df: pd.DataFrame,
     ) -> TableLayout:
+        """Render a two-column metric/value table and return its layout."""
         table_columns: dict[str, TableColumn] = {
             "Metric": TableColumn(
                 detail_style=TableColumnStyle(
@@ -537,6 +555,7 @@ class AuditPDFRenderer:
         )
 
     def _render_executive_summary(self) -> None:
+        """Render the executive summary page with headline and metrics."""
         if len(self.results) == 0:
             return
 
@@ -611,6 +630,7 @@ class AuditPDFRenderer:
         )
 
     def _render_features_page(self) -> None:
+        """Render the feature list page with metadata table."""
         header_top_y = 0.88
         pdf_page = self.pdf_doc.create_new_page(page_name="Feature List")
         pdf_page.continuation_text = "(cont.)"
@@ -750,6 +770,7 @@ class AuditPDFRenderer:
         _ = render_table(pdf_page=pdf_page, table=table)
 
     def _render_anomaly_page(self) -> None:
+        """Render the anomaly summary page, if anomaly data exists."""
         anomaly_data = (
             self.summary.anomaly_data
             if self.summary.anomaly_data is not None
@@ -921,6 +942,7 @@ class AuditPDFRenderer:
         _ = render_table(pdf_page=pdf_page, table=table)
 
     def _render_model_legend(self) -> None:
+        """Render the model type legend/glossary page."""
         pdf_page = self.pdf_doc.create_new_page(
             page_name="Legend / Glossary", print_page_name=False
         )
@@ -1070,6 +1092,7 @@ class AuditPDFRenderer:
         return status, color, model.drift_index
 
     def _plot_predictive_accuracy(self, sns, ax):
+        """Plot validation accuracy bars with optional cleaned-score overlay."""
         has_cleaned = (
             "Cleaned Score" in self.summary_df.columns
             and self.summary_df["Cleaned Score"].notnull().any()
@@ -1197,6 +1220,7 @@ class AuditPDFRenderer:
             )
 
     def _plot_efficiency_scatter(self, sns, ax):
+        """Plot efficiency as accuracy vs. training time scatter plot."""
         sns.scatterplot(
             x="Train Time (s)",
             y="Val Score",
@@ -1255,6 +1279,7 @@ class AuditPDFRenderer:
         )
 
     def _get_narrow_x_limit(self, y_train, y_val, percentile=99.5):
+        """Compute narrow x-axis limits using percentile clipping."""
         # Combine or take the max of both sets to ensure both fit
         t_limit = np.percentile(y_train, percentile)
         v_limit = np.percentile(y_val, percentile)
@@ -1391,6 +1416,7 @@ class AuditPDFRenderer:
         ax.legend(fontsize=7, loc="upper left")
 
     def _plot_cumulative_importance(self, sns, ax) -> None:
+        """Plot cumulative feature importance for the best model."""
         model = self.best_model.model
         best_model_name = model.model_type.value
         best_model_importance = self.importance_dict[model.id]
@@ -1505,6 +1531,7 @@ class AuditPDFRenderer:
             self._plot_cumulative_importance(sns, ax_imp)
 
     def _render_cv_vs_final(self) -> None:
+        """Render a CV vs. final validation comparison page."""
         pdf_page = self.pdf_doc.create_new_page(page_name="Generalization (CV vs Full)")
         fig = pdf_page.fig
         gs = fig.add_gridspec(1, 1)
@@ -1594,6 +1621,7 @@ class AuditPDFRenderer:
         ax_params: Axes,
         renderer: RendererBase,
     ):
+        """Render a hyperparameter table for a single model configuration."""
         fig = pdf_page.fig
         ax_params.axis("off")
         ax_params.set_xlim(0.0, 1.0)
@@ -1763,6 +1791,7 @@ class AuditPDFRenderer:
         model_color: str,
         test_metrics_text: Optional[str],
     ) -> None:
+        """Plot feature importance bars or a fallback message."""
         if not importance_df.empty:
             # Dynamic Scaling: Adjust bar thickness based on number of features
             active_features = importance_df[importance_df["importance"] != 0.0]
@@ -1862,12 +1891,14 @@ class AuditPDFRenderer:
     def _plot_classification_diagnostics(
         self, ax, y_preds: pd.Series, y_true: pd.Series
     ):
+        """Plot a confusion matrix for classification diagnostics."""
         # Confusion Matrix
         cm = confusion_matrix(y_true, y_preds)
         disp = ConfusionMatrixDisplay(confusion_matrix=cm)
         disp.plot(ax=ax, cmap="Blues", colorbar=False)
 
     def _plot_residual_analysis(self, config: ModelConfiguration, ax_residuals):
+        """Dispatch residual analysis plot based on task type."""
         if config.preds_val is not None:
             if config.task_type == TaskType.REGRESSION:
                 self._plot_regression_residuals(
@@ -1917,6 +1948,7 @@ class AuditPDFRenderer:
         n: int,
         renderer: RendererBase,
     ):
+        """Render a table of worst regression errors."""
         ax.set_title("Worst Regression Misses (Outliers)")
         ax.axis("off")
 
@@ -2026,6 +2058,7 @@ class AuditPDFRenderer:
         n: int,
         renderer: RendererBase,
     ):
+        """Render a table of worst classification errors."""
         ax.set_title(f"Top {n} Model Misses (Outliers)")
         ax.axis("off")
 
@@ -2122,6 +2155,7 @@ class AuditPDFRenderer:
         config: ModelConfiguration,
         renderer: RendererBase,
     ):
+        """Render the error analysis table for a model configuration."""
         worst_errors_n = prefs.default_worst_errors_n
 
         if config.preds_val is not None:
@@ -2147,6 +2181,7 @@ class AuditPDFRenderer:
                     )
 
     def _render_model_deep_dive(self, config: ModelConfiguration) -> None:
+        """Render the per-model deep dive page."""
         model_type_format = EnumFormat()
         id_format = IntegerFormat()
         page_name = f"{model_type_format.format_value(config.model_type)} [{id_format.format_value(config.id)}]"
@@ -2235,6 +2270,7 @@ class AuditPDFRenderer:
         )
 
     def _render_detailed_audit_stats(self) -> None:
+        """Render the detailed audit stats table page."""
         pdf_page = self.pdf_doc.create_new_page(
             page_name="Detailed Audit Stats", print_page_name=False
         )
@@ -2377,6 +2413,7 @@ class AuditPDFRenderer:
         _ = render_table(pdf_page=pdf_page, table=table)
 
     def _render_recommendation_page(self) -> None:
+        """Render the strategic recommendation page."""
         pdf_page = self.pdf_doc.create_new_page(
             page_name="Recommendation", print_page_name=False, include_footer=False
         )

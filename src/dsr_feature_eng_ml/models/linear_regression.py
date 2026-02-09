@@ -1,3 +1,5 @@
+"""Linear regression model specification and parameter definitions."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Type
@@ -20,6 +22,8 @@ from sklearn.linear_model import LinearRegression as SklearnLinearRegression
 
 @dataclass(frozen=True)
 class LinearRegressionParams(ModelParams):
+    """Hyperparameters for linear regression models."""
+
     fit_intercept: bool = True
     copy_X: bool = True
     n_jobs: Optional[int] = None
@@ -47,6 +51,8 @@ class LinearRegressionParams(ModelParams):
 class LinearRegression(
     ModelSpecification[LinearRegressionParams, SklearnLinearRegression]
 ):
+    """Linear regression model specification."""
+
     def get_estimator_class(
         self,
     ) -> Type[SklearnLinearRegression]:

@@ -1,3 +1,5 @@
+"""Audit runner for evaluating and tuning model specifications."""
+
 from __future__ import annotations
 from dsr_feature_eng_ml.enums import OptimizationStrategy
 from dsr_feature_eng_ml.evaluation.schema import (
@@ -20,20 +22,30 @@ import sys
 
 
 class AuditLogger:
+    """Simple stdout tee that writes audit logs to a file."""
+
     def __init__(self, file_path):
+        """Open a log file and mirror stdout to it.
+
+        Args:
+            file_path: Path to the log file to write.
+        """
         self.terminal = sys.stdout
         self.log = open(file_path, "w", encoding="utf-8")
 
     def write(self, message):
+        """Write a message to both terminal and log file."""
         self.terminal.write(message)
         self.log.write(message)
 
     def flush(self):
+        """Flush both terminal and file buffers."""
         # Necessary for compatibility with sys.stdout
         self.terminal.flush()
         self.log.flush()
 
     def close(self):
+        """Close the log file."""
         self.log.close()
 
 
@@ -44,6 +56,11 @@ class ModelAuditor:
     phase_number: int = 0
 
     def __init__(self, config: ModelAuditorConfig):
+        """Initialize the auditor and its summary container.
+
+        Args:
+            config: Audit configuration including data splits and models.
+        """
         self.config = config
         self.summary = ModelAuditSummary(
             data_splits=config.data_splits,
@@ -79,11 +96,17 @@ class ModelAuditor:
         outlier_count: int = prefs.default_worst_errors_n,
         efficiency_threshold: int = prefs.default_efficiency_threshold,
     ) -> None:
-        """
-        Executes the audit for all models in the configuration.
+        """Execute the audit for all configured models.
 
         Args:
-            optimize (bool): If True, runs hyperparameter tuning before final fit.
+            optimize: If True, run hyperparameter tuning before final fit.
+            save_path: Directory (or base path) for logs and snapshot exports.
+            append_timestamp_to_save_path: If True, append audit timestamp to the save path.
+            max_sample_size: Optional cap on sample size during tuning.
+            perform_memory_check: If True, estimate memory risk during tuning.
+            filter_outliers: If True, remove worst outliers for evaluation.
+            outlier_count: Number of worst errors to treat as outliers.
+            efficiency_threshold: Rows/sec threshold for efficiency scoring.
         """
         file_path = Path(save_path) if save_path is not None else Path("")
 
@@ -223,6 +246,7 @@ class ModelAuditor:
             logger.close()
 
     def _report_phase_completion(self, step_description: str):
+        """Finalize a phase by capturing metadata and printing the leaderboard."""
         self.summary.create_metadata()
         print(f"\n--- {step_description} Completed ---")
 

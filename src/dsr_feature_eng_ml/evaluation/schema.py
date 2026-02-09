@@ -1,3 +1,5 @@
+"""Evaluation schema models and feature metadata structures."""
+
 from __future__ import annotations
 import pandas as pd
 from pandas.api.extensions import ExtensionDtype
@@ -62,7 +64,6 @@ T_Params = TypeVar("T_Params", bound="ModelParams")
 
 def _f_audit_gap(gap: Optional[float], status: ModelGeneralization) -> str:
     """Private domain-specific wrapper for the audit report."""
-    # return f_val_desc(val=gap, desc=status.value, fmt=prefs.score_format)
     audit_gap_format = ValueDescFormat(
         precision=prefs.score_format.precision, description=status.value
     )
@@ -1124,8 +1125,12 @@ class DataSplits:
 
 @dataclass
 class ModelConfigurationStats:
+    """Statistical summaries for model train/val/test target distributions."""
+
     @dataclass
     class ModelSplitStats:
+        """Descriptive stats for a single data split."""
+
         class SplitType(Enum):
             TRAIN_VAL = auto()
             TEST = auto()
@@ -1151,6 +1156,17 @@ class ModelConfigurationStats:
         config: ModelConfiguration,
         split_type: ModelSplitStats.SplitType = ModelSplitStats.SplitType.TRAIN_VAL,
     ) -> "ModelConfigurationStats":
+        """Build split statistics and drift metrics from a model config.
+
+        Args:
+            data_splits: Dataset splits with targets.
+            config: Model configuration providing scores for deltas.
+            split_type: Which split stats to compute.
+
+        Returns:
+            `ModelConfigurationStats` populated for the requested split.
+        """
+
         def get_scalar(val):
             return float(pd.Series(val).iloc[0])
 
@@ -1232,6 +1248,8 @@ class ModelConfigurationStats:
 @dataclass(frozen=True)
 @functools.total_ordering
 class ModelConfiguration(Generic[T_Params]):
+    """Frozen snapshot of a model run and its evaluation metrics."""
+
     id: str
     model_type: ModelType
     task_type: TaskType
@@ -1310,12 +1328,14 @@ class ModelConfiguration(Generic[T_Params]):
 
     @property
     def r2_gap(self) -> float:
+        """Return absolute gap between train and validation $R^2$."""
         if self.r2_train is None or self.r2_val is None:
             return 0.0
         return abs(self.r2_train - self.r2_val)
 
     @property
     def mae_gap(self) -> float:
+        """Return validation minus train MAE (positive means worse on validation)."""
         if self.mae_train is None or self.mae_val is None:
             return 0.0
         # Note: For error metrics, we often use (Val - Train)
@@ -1346,6 +1366,7 @@ class ModelConfiguration(Generic[T_Params]):
 
     @property
     def model_generalization(self) -> ModelGeneralization:
+        """Classify generalization status from the primary gap metrics."""
         # Use the primary scores (which could be F1 or R2 depending on task)
         if self.score_train is None or self.score_val is None:
             return ModelGeneralization.PENDING
@@ -1365,25 +1386,31 @@ class ModelConfiguration(Generic[T_Params]):
 
     @property
     def total_duration(self) -> float:
+        """Return total runtime in seconds (tuning + fit)."""
         return self.tuning_duration + self.fit_duration
 
     @property
     def total_duration_min(self) -> float:
+        """Return total runtime in minutes."""
         return self.total_duration / 60.0
 
     @property
     def train_score(self) -> float:
+        """Return train score or 0.0 if unavailable."""
         return self.score_train if self.score_train is not None else 0.0
 
     @property
     def val_score(self) -> float:
+        """Return validation score or 0.0 if unavailable."""
         return self.score_val if self.score_val is not None else 0.0
 
     @property
     def test_score(self) -> float:
+        """Return test score or 0.0 if unavailable."""
         return self.score_test if self.score_test is not None else 0.0
 
     def efficiency(self, data_splits: DataSplits) -> float:
+        """Compute rows-per-second throughput for train + validation data."""
         if self.total_duration > 0.0:
             return (
                 len(data_splits.train_features) + len(data_splits.val_features)
@@ -1496,6 +1523,14 @@ class ModelConfiguration(Generic[T_Params]):
         return data
 
     def get_top_features(self, n: int = 1) -> dict:
+        """Return a flattened dict of top feature importance entries.
+
+        Args:
+            n: Number of top features to include.
+
+        Returns:
+            Dictionary with Top_Feature/Importance/Cum_Importance entries.
+        """
         feature_data = {}
 
         # Cache the column indices
@@ -1581,11 +1616,13 @@ class ModelConfiguration(Generic[T_Params]):
         )
 
     def __eq__(self, other: object) -> bool:
+        """Compare configurations by validation score."""
         if not isinstance(other, ModelConfiguration):
             return NotImplemented
         return self.score_val == other.score_val
 
     def __lt__(self, other: object) -> bool:
+        """Order configurations by validation score (None is lowest)."""
         if not isinstance(other, ModelConfiguration):
             return NotImplemented
         # Handle None values: None is considered "less than" any numeric value
@@ -1598,6 +1635,7 @@ class ModelConfiguration(Generic[T_Params]):
         return self.score_val < other.score_val
 
     def info(self) -> str:
+        """Return a formatted summary of key configuration metrics."""
         # 1. Primary Metric Labeling
         metric_label = self.scoring.value.upper()
 
@@ -1724,16 +1762,19 @@ class ModelAuditorConfig:
 
     @property
     def n_jobs(self) -> int:
+        """Resolved parallel job count for model training."""
         return self._n_jobs
 
     @n_jobs.setter
     def n_jobs(self, value: int):
+        """Validate and propagate n_jobs to all configured models."""
         self._n_jobs = validate_n_jobs(value)
 
         for m in self.models_to_run:
             m.n_jobs = self.n_jobs
 
     def __post_init__(self):
+        """Apply default job count and propagate to models."""
         self.n_jobs = 3
 
     @classmethod

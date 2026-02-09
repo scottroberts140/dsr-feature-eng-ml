@@ -1,6 +1,4 @@
-"""
-Enumeration definitions for -specific classifications and configurations.
-"""
+"""Enumeration definitions for dsr_feature_eng_ml classifications and configs."""
 
 from __future__ import annotations
 from enum import Enum, auto, Flag

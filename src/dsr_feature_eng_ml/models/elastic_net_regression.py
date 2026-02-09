@@ -1,3 +1,5 @@
+"""Elastic Net regression model specification and parameter definitions."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Literal, Type
@@ -20,6 +22,8 @@ from sklearn.linear_model import ElasticNet as SklearnElasticNet
 
 @dataclass(frozen=True)
 class ElasticNetParams(ModelParams):
+    """Hyperparameters for Elastic Net regression models."""
+
     alpha: float = 1.0
     l1_ratio: float = 0.5
     fit_intercept: bool = True
@@ -48,6 +52,24 @@ class ElasticNetParams(ModelParams):
 
     @staticmethod
     def get_standard_search_grid(narrow: bool = True) -> dict[str, list]:
+        """Generate a standard hyperparameter search grid for Elastic Net.
+
+        The narrow grid focuses on moderate alpha and l1_ratio values, while the
+        expanded grid explores a wider range of regularization strengths and
+        mixing ratios.
+
+        Args:
+            narrow (bool, optional): If True (default), returns a compact grid.
+                If False, returns an expanded grid.
+
+        Returns:
+            dict[str, list]: Parameter grid mapping ``alpha`` and ``l1_ratio`` to
+            candidate values.
+
+        Example:
+            >>> narrow_grid = ElasticNetParams.get_standard_search_grid()
+            >>> expanded_grid = ElasticNetParams.get_standard_search_grid(narrow=False)
+        """
         if narrow:
             return {"alpha": [0.1, 1.0, 10.0], "l1_ratio": [0.2, 0.5, 0.8]}
         return {
@@ -57,6 +79,8 @@ class ElasticNetParams(ModelParams):
 
 
 class ElasticNetRegression(ModelSpecification[ElasticNetParams, SklearnElasticNet]):
+    """Elastic Net regression model specification."""
+
     def get_estimator_class(
         self,
     ) -> Type[SklearnElasticNet]:

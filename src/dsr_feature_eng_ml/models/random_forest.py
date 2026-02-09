@@ -93,6 +93,26 @@ class RandomForestParams(ModelParams):
 
     @staticmethod
     def get_standard_search_grid(narrow: bool = True) -> dict[str, list]:
+        """Generate a standard hyperparameter search grid for Random Forest.
+
+        Provides a compact grid for quick tuning or a broader grid that explores
+        depth, leaf/split thresholds, feature sampling, and bootstrapping.
+
+        Args:
+            narrow (bool, optional): If True (default), returns a compact grid
+                focused on core parameters. If False, returns an expanded grid.
+
+        Returns:
+            dict[str, list]: Parameter grid with keys mapping to candidate values.
+                - narrow=True: n_estimators, max_depth, max_features,
+                  min_samples_leaf, bootstrap
+                - narrow=False: Adds min_samples_split, criterion,
+                  max_samples, and broader ranges.
+
+        Example:
+            >>> narrow_grid = RandomForestParams.get_standard_search_grid()
+            >>> expanded_grid = RandomForestParams.get_standard_search_grid(narrow=False)
+        """
         if narrow:
             grid = {
                 "n_estimators": [100, 200, 500],
@@ -121,6 +141,8 @@ class RandomForest(
         RandomForestParams, Union[RandomForestClassifier, RandomForestRegressor]
     ]
 ):
+    """Random forest model specification for regression/classification."""
+
     def get_estimator_class(
         self,
     ) -> Type[Union[RandomForestClassifier, RandomForestRegressor]]:

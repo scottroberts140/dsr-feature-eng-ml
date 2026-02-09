@@ -1,3 +1,5 @@
+"""Memory-aware helpers for tuning and resource checks."""
+
 from __future__ import annotations
 import psutil
 import pandas as pd
@@ -9,6 +11,14 @@ if TYPE_CHECKING:
 
 
 def validate_n_jobs(value: int) -> int:
+    """Normalize n_jobs to a safe CPU count.
+
+    Args:
+        value: Requested number of jobs; -1 means all cores.
+
+    Returns:
+        A bounded job count between 1 and the available CPU count.
+    """
     import os
 
     n_jobs = 1
@@ -25,6 +35,16 @@ def validate_n_jobs(value: int) -> int:
 def check_memory_risk(
     df: pd.DataFrame, model: ModelSpecification, n_jobs: int = -1
 ) -> Tuple[bool, float, float, float]:
+    """Estimate memory risk for model tuning and print a summary.
+
+    Args:
+        df: Dataset used for training/tuning.
+        model: Model specification with tuning parameters.
+        n_jobs: Requested parallel workers (-1 for all cores).
+
+    Returns:
+        Tuple of (risk, estimated_peak_gb, available_gb, model_multiplier).
+    """
     from dsr_utils.formatting import (
         BoolRepresentation,
         IntegerFormat,

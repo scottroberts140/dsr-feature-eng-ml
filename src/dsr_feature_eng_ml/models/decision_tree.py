@@ -1,3 +1,5 @@
+"""Decision tree model specification and parameter definitions."""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import (
@@ -42,6 +44,8 @@ TreeClass = Union[Type[DecisionTreeClassifier], Type[DecisionTreeRegressor]]
 
 @dataclass(frozen=True)
 class DecisionTreeParams(ModelParams):
+    """Hyperparameters for decision tree models."""
+
     criterion: Literal[
         "gini",
         "entropy",
@@ -170,6 +174,8 @@ class DecisionTree(
         DecisionTreeParams, Union[DecisionTreeClassifier, DecisionTreeRegressor]
     ]
 ):
+    """Decision tree model specification for regression/classification."""
+
     def get_estimator_class(
         self,
     ) -> Type[Union[DecisionTreeClassifier, DecisionTreeRegressor]]:

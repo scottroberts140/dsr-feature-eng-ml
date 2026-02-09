@@ -1,3 +1,5 @@
+"""Generalization status helpers for audit scoring."""
+
 from __future__ import annotations
 
 from typing import Optional
