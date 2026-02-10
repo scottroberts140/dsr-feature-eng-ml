@@ -71,6 +71,12 @@ def _f_audit_gap(gap: Optional[float], status: ModelGeneralization) -> str:
 
 
 class DatasetFormatters:
+    """Container for dtype-specific formatting rules used in reports.
+
+    Centralizes the formatter selection logic so tables and charts can render
+    values consistently based on pandas dtypes.
+    """
+
     @property
     def dtype_float(self) -> Union[
         CurrencyFormat,
@@ -81,6 +87,11 @@ class DatasetFormatters:
         DateTimeFormat,
         DataFormat,
     ]:
+        """Formatter used for float-like numeric dtypes.
+
+        Returns:
+            Formatter instance used when a column is classified as float.
+        """
         return self._dtype_float
 
     @dtype_float.setter
@@ -96,54 +107,119 @@ class DatasetFormatters:
             DataFormat,
         ],
     ) -> None:
+        """Set the formatter used for float-like numeric dtypes.
+
+        Args:
+            val: Formatter to use for float-valued columns.
+        """
         self._dtype_float = val
 
     @property
     def dtype_object(self) -> Union[EnumFormat, StringFormat]:
+        """Formatter used for object and string dtypes.
+
+        Returns:
+            Formatter instance used for object/string columns.
+        """
         return self._dtype_object
 
     @dtype_object.setter
     def dtype_object(self, val: Union[EnumFormat, StringFormat]) -> None:
+        """Set the formatter used for object and string dtypes.
+
+        Args:
+            val: Formatter to use for object/string columns.
+        """
         self._dtype_object = val
 
     @property
     def dtype_int(self) -> Union[IntegerFormat, ValueDescFormat]:
+        """Formatter used for integer dtypes.
+
+        Returns:
+            Formatter instance used for integer columns.
+        """
         return self._dtype_int
 
     @dtype_int.setter
     def dtype_int(self, val: Union[IntegerFormat, ValueDescFormat]) -> None:
+        """Set the formatter used for integer dtypes.
+
+        Args:
+            val: Formatter to use for integer columns.
+        """
         self._dtype_int = val
 
     @property
     def dtype_bool(self) -> BoolFormat:
+        """Formatter used for boolean dtypes.
+
+        Returns:
+            Formatter instance used for boolean columns.
+        """
         return self._dtype_bool
 
     @dtype_bool.setter
     def dtype_bool(self, val: BoolFormat) -> None:
+        """Set the formatter used for boolean dtypes.
+
+        Args:
+            val: Formatter to use for boolean columns.
+        """
         self._dtype_bool = val
 
     @property
     def dtype_datetime(self) -> DateTimeFormat:
+        """Formatter used for datetime dtypes.
+
+        Returns:
+            Formatter instance used for datetime columns.
+        """
         return self._dtype_datetime
 
     @dtype_datetime.setter
     def dtype_datetime(self, val: DateTimeFormat) -> None:
+        """Set the formatter used for datetime dtypes.
+
+        Args:
+            val: Formatter to use for datetime columns.
+        """
         self._dtype_datetime = val
 
     @property
     def dtype_timedelta(self) -> DateTimeFormat:
+        """Formatter used for timedelta/duration dtypes.
+
+        Returns:
+            Formatter instance used for timedelta/duration columns.
+        """
         return self._dtype_timedelta
 
     @dtype_timedelta.setter
     def dtype_timedelta(self, val: DateTimeFormat) -> None:
+        """Set the formatter used for timedelta/duration dtypes.
+
+        Args:
+            val: Formatter to use for timedelta/duration columns.
+        """
         self._dtype_timedelta = val
 
     @property
     def dtype_category(self) -> StringFormat:
+        """Formatter used for categorical dtypes.
+
+        Returns:
+            Formatter instance used for categorical columns.
+        """
         return self._dtype_category
 
     @dtype_category.setter
     def dtype_category(self, val: StringFormat) -> None:
+        """Set the formatter used for categorical dtypes.
+
+        Args:
+            val: Formatter to use for categorical columns.
+        """
         self._dtype_category = val
 
     def __init__(
@@ -166,6 +242,17 @@ class DatasetFormatters:
         dtype_timedelta: DateTimeFormat = DateTimeFormat(use_duration_format=True),
         dtype_category: StringFormat = StringFormat(),
     ):
+        """Initialize dataset formatter mappings for common dtypes.
+
+        Args:
+            dtype_float: Formatter for float-like numeric columns.
+            dtype_object: Formatter for object/string columns.
+            dtype_int: Formatter for integer columns.
+            dtype_bool: Formatter for boolean columns.
+            dtype_datetime: Formatter for datetime columns.
+            dtype_timedelta: Formatter for timedelta/duration columns.
+            dtype_category: Formatter for categorical columns.
+        """
         self._dtype_float = dtype_float
         self._dtype_object = dtype_object
         self._dtype_int = dtype_int
@@ -177,6 +264,14 @@ class DatasetFormatters:
     def fmt_for_dtype(
         self, input_dtype: Union[np.dtype[Any], ExtensionDtype]
     ) -> FormatConfig:
+        """Return the best-matching formatter for a pandas dtype.
+
+        Args:
+            input_dtype: Pandas or NumPy dtype to classify.
+
+        Returns:
+            Formatter instance appropriate for the given dtype.
+        """
         # Handle ExtensionDtype first (CategoricalDtype, etc.)
         if isinstance(input_dtype, pd.CategoricalDtype):
             return self.dtype_category
@@ -196,56 +291,127 @@ class DatasetFormatters:
 
 
 class FeatureMetadata:
+    """Metadata describing an input feature and its reporting configuration.
+
+    Captures display and formatting context while tracking inclusion in model
+    fitting and parent/child feature relationships for reporting.
+    """
+
     @property
     def name(self) -> str:
+        """Raw feature/column name.
+
+        Returns:
+            Original column name in the dataset.
+        """
         return self._name
 
     @property
     def id(self) -> str:
+        """Stable feature identifier used in reports.
+
+        Returns:
+            Identifier such as "F01" used in export tables.
+        """
         return self._id
 
     @property
     def position(self) -> int:
+        """Original position of the column in the dataset.
+
+        Returns:
+            Zero-based index of the feature in the source DataFrame.
+        """
         return self._position
 
     @property
     def short_name(self) -> str:
+        """Display-friendly short name for charts and tables.
+
+        Returns:
+            Shortened or cleaned label for visualization output.
+        """
         return self._short_name
 
     @short_name.setter
     def short_name(self, val: str) -> None:
+        """Set the display-friendly short name.
+
+        Args:
+            val: Short label to use in charts and tables.
+        """
         self._short_name = val
 
     @property
     def formatter(self) -> FormatConfig:
+        """Formatter used when rendering this feature.
+
+        Returns:
+            Formatter used to render values in reports.
+        """
         return self._formatter
 
     @formatter.setter
     def formatter(self, val: FormatConfig) -> None:
+        """Set the formatter used when rendering this feature.
+
+        Args:
+            val: Formatter to apply when rendering values.
+        """
         self._formatter = val
 
     @property
     def description(self) -> str:
+        """Optional description for reporting context.
+
+        Returns:
+            Free-form description provided by the user.
+        """
         return self._description
 
     @description.setter
     def description(self, val: str) -> None:
+        """Set the optional description for reporting context.
+
+        Args:
+            val: Description string to include in reports.
+        """
         self._description = val
 
     @property
     def is_used_in_fit(self) -> bool:
+        """Whether this feature is included in model fitting.
+
+        Returns:
+            True if the feature should be included in training.
+        """
         return self._is_used_in_fit
 
     @is_used_in_fit.setter
     def is_used_in_fit(self, val: bool) -> None:
+        """Set whether this feature is included in model fitting.
+
+        Args:
+            val: True to include the feature in training.
+        """
         self._is_used_in_fit = val
 
     @property
     def parent_name(self) -> Optional[str]:
+        """Name of the parent feature used for consolidated reporting.
+
+        Returns:
+            Parent feature name or None when not applicable.
+        """
         return self._parent_name
 
     @parent_name.setter
     def parent_name(self, val: str) -> None:
+        """Set the parent feature name used for consolidated reporting.
+
+        Args:
+            val: Parent feature name used in grouped reporting.
+        """
         self._parent_name = val
 
     def __init__(
@@ -261,6 +427,18 @@ class FeatureMetadata:
             None  # Name of the feature that should represent this feature in reports
         ),
     ):
+        """Initialize metadata for a dataset feature.
+
+        Args:
+            name: Raw column name.
+            id: Stable identifier for exports.
+            position: Zero-based index within the source DataFrame.
+            short_name: Optional short label for display.
+            formatter: Formatter used when rendering values.
+            description: Optional feature description.
+            is_used_in_fit: Whether the feature is included in training.
+            parent_name: Optional parent feature for grouped reporting.
+        """
         self._name = name
         self._id = id
         self._position = position
@@ -271,6 +449,11 @@ class FeatureMetadata:
         self._parent_name = parent_name
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the feature metadata to a dictionary.
+
+        Returns:
+            Dict representation suitable for JSON exports.
+        """
         data = {
             "name": self.name,
             "id": self.id,
@@ -288,6 +471,15 @@ class FeatureMetadata:
     def dict_to_set(
         cls, feature_dict: dict[str, FeatureMetadata], target_column: str
     ) -> Set[FeatureMetadata]:
+        """Convert a feature metadata dict to a filtered set for model fitting.
+
+        Args:
+            feature_dict: Mapping of column name to metadata.
+            target_column: Target column name to exclude.
+
+        Returns:
+            Set of features that are eligible for model fitting.
+        """
         feature_list: List[FeatureMetadata] = list(feature_dict.values())
         return cls.list_to_set(feature_list=feature_list, target_column=target_column)
 
@@ -295,6 +487,15 @@ class FeatureMetadata:
     def list_to_set(
         cls, feature_list: List[FeatureMetadata], target_column: str
     ) -> Set[FeatureMetadata]:
+        """Filter feature metadata list to the features used for fitting.
+
+        Args:
+            feature_list: List of feature metadata objects.
+            target_column: Target column name to exclude.
+
+        Returns:
+            Set of features that are eligible for model fitting.
+        """
         return set(
             [f for f in feature_list if f.is_used_in_fit and f.name != target_column]
         )
@@ -303,15 +504,28 @@ class FeatureMetadata:
     def from_df(
         cls,
         df: pd.DataFrame,
-        formatters: DatasetFormatters,
+        formatters: DatasetFormatters = DatasetFormatters(),
         format_exceptions: dict[
             str,
             FormatConfig,
-        ],
+        ] = {},
         feature_parent: dict[str, str] = {},
         exclude_from_fit: set[str] = set(),
         short_names: dict[str, str] = {},
     ) -> dict[str, FeatureMetadata]:
+        """Build feature metadata for every column in a DataFrame.
+
+        Args:
+            df: Source DataFrame.
+            formatters: Formatter registry for dtype-based formatting.
+            format_exceptions: Per-column formatter overrides.
+            feature_parent: Mapping of column name to parent feature name.
+            exclude_from_fit: Set of columns to exclude from model fitting.
+            short_names: Mapping of column name to display-friendly short name.
+
+        Returns:
+            Mapping from column name to populated FeatureMetadata.
+        """
         fm_dict: dict[str, FeatureMetadata] = {}
         i = 0
         feature_count = len(df.columns)

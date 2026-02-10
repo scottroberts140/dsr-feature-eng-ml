@@ -7,7 +7,7 @@
 
 Comprehensive machine learning model evaluation and feature engineering framework.
 
-**Version 1.0.0**: This release is breaking and not backward-compatible with prior 0.x versions.
+**Version 1.1.0**: This release adds new defaults and incremental improvements while remaining compatible with 1.0.0.
 
 **Release scope**: Regression workflows have been tested. Classification workflows are implemented but not yet tested; a follow-up release will expand validation and coverage.
 
