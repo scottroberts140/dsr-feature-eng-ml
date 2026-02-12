@@ -6,16 +6,16 @@ import sys
 import pandas as pd
 
 # Ensure the library source is on path
-SRC_PATH = "/Users/scottroberts/Documents/Developer/Projects/Python Libraries/dsr-feature-eng-ml/src"
+SRC_PATH = "/Users/scottroberts/Library/CloudStorage/GoogleDrive-scottrdeveloper@gmail.com/My Drive/Projects/Python Libraries/dsr-feature-eng-ml/src"
 if SRC_PATH not in sys.path:
     sys.path.append(SRC_PATH)
 
 
 # Paths
 DATA_PATH = (
-    "/Users/scottroberts/Documents/Developer/Projects/BetaBank/datasets/Churn.csv"
+    "/Users/scottroberts/Library/CloudStorage/GoogleDrive-scottrdeveloper@gmail.com/My Drive/Projects/BetaBank/datasets/Churn.csv"
 )
-OUT_PATH = "/Users/scottroberts/Documents/Developer/Projects/Python Libraries/dsr-feature-eng-ml/src/dsr_feature_eng_ml/reports/decision_tree_validate_model_report_real.txt"
+OUT_PATH = "/Users/scottroberts/Library/CloudStorage/GoogleDrive-scottrdeveloper@gmail.com/My Drive/Projects/Python Libraries/dsr-feature-eng-ml/src/dsr_feature_eng_ml/reports/decision_tree_validate_model_report_real.txt"
 
 # Load a small subset of the dataset
 df = pd.read_csv(DATA_PATH)

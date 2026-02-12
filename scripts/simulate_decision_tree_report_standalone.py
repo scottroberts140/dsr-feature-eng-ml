@@ -4,8 +4,8 @@ from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
 
-DATA_PATH = "/Users/scottroberts/Documents/Developer/Projects/BetaBank/datasets/Churn.csv"
-OUT_PATH = "/Users/scottroberts/Documents/Developer/Projects/Python Libraries/dsr-feature-eng-ml/src/dsr_feature_eng_ml/reports/decision_tree_validate_model_report_real.txt"
+DATA_PATH = "/Users/scottroberts/Library/CloudStorage/GoogleDrive-scottrdeveloper@gmail.com/My Drive/Projects/BetaBank/datasets/Churn.csv"
+OUT_PATH = "/Users/scottroberts/Library/CloudStorage/GoogleDrive-scottrdeveloper@gmail.com/My Drive/Projects/Python Libraries/dsr-feature-eng-ml/src/dsr_feature_eng_ml/reports/decision_tree_validate_model_report_real.txt"
 HEADER = "Decision Tree (Auto-Balanced - Validation)"
 REPORT_WIDTH = 80
 SCORE_FORMAT = ".4f"
