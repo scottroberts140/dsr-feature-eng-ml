@@ -2,35 +2,66 @@
 
 from __future__ import annotations
 
-import json
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import MISSING, asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
 import matplotlib.pyplot as plt
-from dsr_feature_eng_ml.enums import TaskType
-from dsr_feature_eng_ml.utils.memory import validate_n_jobs
+from dsr_files.json_handler import load_json, save_json
 from dsr_utils.formatting import (
-    DataScale,
     CurrencyFormat,
-    PercentageFormat,
-    FloatFormat,
     DataFormat,
+    DataScale,
+    FloatFormat,
+    PercentageFormat,
 )
+
+from dsr_feature_eng_ml.enums import ModelType, TaskType
+from dsr_feature_eng_ml.utils.memory import validate_n_jobs
 
 
 @dataclass
 class ModelColor:
-    """Container for primary and secondary model colors."""
+    """
+    Container for primary and secondary model colors.
 
-    solid: str  # For "Actual" bars and Scatter dots
-    light: str  # For "Potential" shadow bars
+    Attributes
+    ----------
+    solid : str
+        Hex color code for "Actual" bars, scatter dots, and primary lines.
+    light : str
+        Hex color code for "Potential" shadow bars or confidence intervals.
+    """
+
+    solid: str
+    light: str
 
 
 @dataclass
 class Preferences:
-    """Singleton container for library preferences."""
+    """
+    Singleton configuration hub for the dsr-feature_eng_ml library.
+
+    This class manages global heuristics, visualization styles, performance
+    thresholds, and reporting formats. It uses a singleton pattern to ensure
+    consistent behavior across Auditor and ModelSpecification components.
+
+    Attributes
+    ----------
+    random_state : int, default 42
+        Seed used for reproducibility in model training and data splitting.
+    acceptable_gap : float, default 0.02
+        The maximum training-to-test performance gap considered 'Well-Fit'.
+    large_gap : float, default 0.05
+        The gap threshold above which a model is classified as 'Overfit'.
+    n_jobs : int
+        The number of parallel processes to use, validated against CPU count.
+    report_width : int, default 100
+        The character width used for console-based reporting.
+    """
 
     _instance = None
+    _initialized = False
 
     # Default values
     random_state: int = 42
@@ -53,6 +84,7 @@ class Preferences:
     model_stability_limit: float = 0.85
     model_efficiency_threshold: int = 50_000
     drift_threshold: float = 0.05
+
     hp_short_names: dict[str, str] = field(
         default_factory=lambda: {
             "n_estimators": "Trees",
@@ -85,21 +117,17 @@ class Preferences:
 
         @classmethod
         def get_high_quality(cls) -> Preferences.ModelQuality:
-            return Preferences.ModelQuality(
-                score_min=95.0, text="HIGH", text_weight="bold", color="#27ae60"
-            )
+            return cls(score_min=95.0, text="HIGH", text_weight="bold", color="#27ae60")
 
         @classmethod
         def get_average_quality(cls) -> Preferences.ModelQuality:
-            return Preferences.ModelQuality(
+            return cls(
                 score_min=70.0, text="AVERAGE", text_weight="normal", color="#f39c12"
             )
 
         @classmethod
         def get_low_quality(cls) -> Preferences.ModelQuality:
-            return Preferences.ModelQuality(
-                score_min=0.0, text="LOW", text_weight="bold", color="#e74c3c"
-            )
+            return cls(score_min=0.0, text="LOW", text_weight="bold", color="#e74c3c")
 
     def get_model_quality(self, quality_score: float) -> Preferences.ModelQuality:
         """Map a numeric quality score to a quality tier."""
@@ -119,27 +147,19 @@ class Preferences:
 
         @classmethod
         def get_proceed_to_deployment(cls) -> Preferences.ModelRecommendation:
-            return Preferences.ModelRecommendation(
-                action="PROCEED TO DEPLOYMENT", color="#27ae60"
-            )
+            return cls(action="PROCEED TO DEPLOYMENT", color="#27ae60")
 
         @classmethod
         def get_clean_data_and_retrain(cls) -> Preferences.ModelRecommendation:
-            return Preferences.ModelRecommendation(
-                action="CLEAN DATA & RETRAIN", color="#f39c12"
-            )
+            return cls(action="CLEAN DATA & RETRAIN", color="#f39c12")
 
         @classmethod
         def get_proceed_efficiency_win(cls) -> Preferences.ModelRecommendation:
-            return Preferences.ModelRecommendation(
-                action="PROCEED (EFFICIENCY WIN)", color="#2980b9"
-            )
+            return cls(action="PROCEED (EFFICIENCY WIN)", color="#2980b9")
 
         @classmethod
         def get_review_model_architecture(cls) -> Preferences.ModelRecommendation:
-            return Preferences.ModelRecommendation(
-                action="REVIEW MODEL ARCHITECTURE", color="#e74c3c"
-            )
+            return cls(action="REVIEW MODEL ARCHITECTURE", color="#e74c3c")
 
     def get_model_recommendation(
         self,
@@ -160,41 +180,70 @@ class Preferences:
 
         return self.model_recommendation["review_model_architecture"]
 
-    color_success = "#27ae60"  # True Green (Safe, High Quality, Profit)
-    color_warning = "#f39c12"  # Amber
-    color_danger = "#e74c3c"  # True Red (Drift, Low Quality, Loss)
-    color_acceptable = "#2980B9"  # Blue
-    color_neutral = "#34495e"  # Audit Blue (Legend, Info)
-    color_classic_blue = "#2980b9"  # Classic Blue (for contrast with Audit Blue)
-    color_title = "#212121"  # Dark Charcoal
-    color_paper = "#fdfefe"  # Clean Paper White
+    # Global Color Constants
+    color_success = "#27ae60"
+    color_warning = "#f39c12"
+    color_danger = "#e74c3c"
+    color_acceptable = "#2980B9"
+    color_neutral = "#34495e"
+    color_classic_blue = "#2980b9"
+    color_title = "#212121"
+    color_paper = "#fdfefe"
     color_light_gray = "#d5dbdb"
     color_faint_gray_blue = "#f8f9f9"
     tight_layout_rect = (0, 0.05, 1, 0.92)
 
+    def __new__(cls, *args, **kwargs):
+        """Implement Singleton pattern."""
+        if not cls._instance:
+            cls._instance = super(Preferences, cls).__new__(cls)
+        return cls._instance
+
+    def __post_init__(self):
+        """Initialize backing variables, formats, and styles once."""
+        if self._initialized:
+            return
+
+        self.n_jobs = -1
+        self.cv_verbose = 0
+        self._currency_format = CurrencyFormat()
+        self._score_format = FloatFormat(precision=4)
+        self._gb_format = DataFormat(data_scale=DataScale.GB)
+        self._train_time_format = FloatFormat(precision=2)
+        self._drift_format = PercentageFormat(precision=3)
+
+        self.apply_style()
+
+        self.model_quality = {
+            "high": self.ModelQuality.get_high_quality(),
+            "average": self.ModelQuality.get_average_quality(),
+            "low": self.ModelQuality.get_low_quality(),
+        }
+        self.model_recommendation = {
+            "proceed_to_deployment": self.ModelRecommendation.get_proceed_to_deployment(),
+            "clean_data_and_retrain": self.ModelRecommendation.get_clean_data_and_retrain(),
+            "proceed_efficiency_win": self.ModelRecommendation.get_proceed_efficiency_win(),
+            "review_model_architecture": self.ModelRecommendation.get_review_model_architecture(),
+        }
+
+        self._initialized = True
+
     @property
     def cv_verbose(self) -> int:
-        """Verbosity level for CV/tuning output (0-3)."""
+        """Verbosity level for cross-validation and tuning (0-3)."""
         return self._cv_verbose
 
     @cv_verbose.setter
     def cv_verbose(self, value: int):
-        """Clamp and set CV verbosity to the range 0-3."""
-        if value < 0:
-            self._cv_verbose = 0
-        elif value > 3:
-            self._cv_verbose = 3
-        else:
-            self._cv_verbose = value
+        self._cv_verbose = max(0, min(3, value))
 
     @property
     def n_jobs(self) -> int:
-        """Effective parallel job count after validation."""
+        """Validated parallel job count."""
         return self._n_jobs
 
     @n_jobs.setter
     def n_jobs(self, value: int):
-        """Validate and set parallel job count."""
         self._n_jobs = validate_n_jobs(value)
 
     @property
@@ -223,53 +272,62 @@ class Preferences:
         return self._drift_format
 
     def _build_model_colors(self) -> dict[str, ModelColor]:
-        """Construct the default model color palette."""
-        from dsr_feature_eng_ml.enums import ModelType
-
+        """
+        Map ModelType values to specific color pairs.
+        """
         return {
-            # --- Regression ---
+            # --- Regression Models ---
             ModelType.DECISION_TREE_REGRESSOR.value: ModelColor(
-                solid="#008080", light="#4db6ac"
-            ),  # Teal (Moved from Green)
+                "#008080", "#4db6ac"
+            ),  # Teal
             ModelType.RANDOM_FOREST_REGRESSOR.value: ModelColor(
-                solid="#2c3e50", light="#5d6d7e"
-            ),  # Midnight Blue (Distinct from Ridge)
-            ModelType.RIDGE.value: ModelColor(solid="#2980b9", light="#3498db"),  # Blue
+                "#2c3e50", "#5d6d7e"
+            ),  # Slate / Navy
+            ModelType.RIDGE.value: ModelColor("#2980b9", "#3498db"),  # River Blue
             ModelType.LINEAR_REGRESSION.value: ModelColor(
-                solid="#8e44ad", light="#9b59b6"
-            ),  # Purple
-            ModelType.LASSO.value: ModelColor(
-                solid="#d35400", light="#e67e22"
-            ),  # Orange
+                "#8e44ad", "#9b59b6"
+            ),  # Amethyst
+            ModelType.LASSO.value: ModelColor("#d35400", "#e67e22"),  # Pumpkin
             ModelType.ELASTIC_NET.value: ModelColor(
-                solid="#7f8c8d", light="#95a5a6"
-            ),  # Gray
-            # --- Classification ---
+                "#7f8c8d", "#95a5a6"
+            ),  # Asbestos Gray
+            # --- Classification Models ---
             ModelType.DECISION_TREE_CLASSIFIER.value: ModelColor(
-                solid="#d4ac0d", light="#f1c40f"
-            ),  # Ochre/Gold (Moved from Teal)
+                "#d4ac0d", "#f1c40f"
+            ),  # Flat Gold
             ModelType.RANDOM_FOREST_CLASSIFIER.value: ModelColor(
-                solid="#a04000", light="#d35400"
-            ),  # Sienna/Brown (Moved from Forest)
+                "#a04000", "#d35400"
+            ),  # Burnt Orange
             ModelType.LOGISTIC_REGRESSION.value: ModelColor(
-                solid="#6c3483", light="#a569bd"
+                "#6c3483", "#a569bd"
             ),  # Plum
-            # --- Unknown ---
-            ModelType.UNKNOWN.value: ModelColor(
-                solid="#34495e", light="#7f8c8d"
-            ),  # Deep Slate / Steel
+            # --- NEW: Added Model Support ---
+            ModelType.XGB_CLASSIFIER.value: ModelColor(
+                "#1e8449", "#2ecc71"
+            ),  # Emerald Green
+            ModelType.K_NEIGHBORS_CLASSIFIER.value: ModelColor(
+                "#1a5276", "#5499c7"
+            ),  # Ocean Blue
+            ModelType.RIDGE_CLASSIFIER.value: ModelColor(
+                "#1b2631", "#283747"
+            ),  # Charcoal Blue
+            ModelType.LINEAR_SVC.value: ModelColor(
+                "#922b21", "#c0392b"
+            ),  # Ruby / Crimson
+            # --- Fallback ---
+            ModelType.UNKNOWN.value: ModelColor("#34495e", "#7f8c8d"),  # Wet Asphalt
         }
 
     @property
     def model_colors(self) -> dict[str, ModelColor]:
-        """Lazily initialized model color palette."""
+        """Lazy-loaded model color dictionary."""
         if not hasattr(self, "_model_colors"):
             self._model_colors = self._build_model_colors()
         return self._model_colors
 
     def get_color(self, model_name: str, shadow: bool = False) -> str:
-        """Return the primary or shadow color for a model name."""
-        color_obj = self.model_colors.get(model_name, prefs.get_default_color())
+        """Return hex color for a specific model."""
+        color_obj = self.model_colors.get(model_name, self.get_default_color())
         return color_obj.light if shadow else color_obj.solid
 
     def get_solid_palette(self):
@@ -280,57 +338,12 @@ class Preferences:
         """Return a palette of light colors keyed by model name."""
         return {name: color.light for name, color in self.model_colors.items()}
 
-    def get_default_color(self):
-        """Return the fallback model color pair."""
+    def get_default_color(self) -> ModelColor:
+        """Fallback color pair."""
         return ModelColor("#333333", "#999999")
 
-    def __post_init__(self):
-        """Initialize default formats, palettes, and style settings."""
-        # Initialize the backing variables for the properties
-        # This ensures the defaults are applied on the very first import
-        self.n_jobs = -1  # Triggers the setter to calculate CPU count
-        self.cv_verbose = 0
-        self._currency_format = CurrencyFormat()
-        self._score_format = FloatFormat(precision=4)
-        self._gb_format = DataFormat(data_scale=DataScale.GB)
-        self._train_time_format = FloatFormat(precision=2)
-        self._drift_format = PercentageFormat(precision=3)
-        self.apply_style()
-        self.model_quality = {
-            "high": Preferences.ModelQuality.get_high_quality(),
-            "average": Preferences.ModelQuality.get_average_quality(),
-            "low": Preferences.ModelQuality.get_low_quality(),
-        }
-        self.model_recommendation = {
-            "proceed_to_deployment": Preferences.ModelRecommendation.get_proceed_to_deployment(),
-            "clean_data_and_retrain": Preferences.ModelRecommendation.get_clean_data_and_retrain(),
-            "proceed_efficiency_win": Preferences.ModelRecommendation.get_proceed_efficiency_win(),
-            "review_model_architecture": Preferences.ModelRecommendation.get_review_model_architecture(),
-        }
-
-    def __new__(cls, *args, **kwargs):
-        """Singleton constructor for Preferences."""
-        if not cls._instance:
-            cls._instance = super(Preferences, cls).__new__(cls)
-        return cls._instance
-
-    def __repr__(self) -> str:
-        """Provides a cleanly formatted table of current library preferences."""
-        header = f"{'Preference':<25} | {'Value':<20}"
-        separator = "-" * 48
-
-        lines = [header, separator]
-        for field in fields(self):
-            # Skip the internal instance tracker
-            if field.name.startswith("_"):
-                continue
-            val = getattr(self, field.name)
-            lines.append(f"{field.name:<25} | {str(val):<20}")
-
-        return "\n" + "\n".join(lines) + "\n"
-
     def update(self, **kwargs: Any) -> None:
-        """Update multiple preferences at once."""
+        """Update multiple preferences with attribute validation."""
         for key, value in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, value)
@@ -338,35 +351,86 @@ class Preferences:
                 raise AttributeError(f"'{key}' is not a valid preference.")
 
     def save_to_json(self, path: str | Path) -> None:
-        """Persist preferences to a JSON file."""
-        with open(path, "w") as f:
-            json.dump(asdict(self), f, indent=4)
+        """
+        Persist preferences to a JSON file using the library's safe handler.
 
-    def load_from_json(self, path: str | Path) -> None:
-        """Load preferences from a JSON file."""
-        with open(path, "r") as f:
-            data = json.load(f)
-            self.update(**data)
+        Parameters
+        ----------
+        path : str or Path
+            The file system path (e.g., 'config/prefs.json') where the
+            configuration should be saved.
+        """
+        path_obj = Path(path)
 
-    def reset_defaults(self) -> None:
-        """Restores preferences to the library original hardcoded defaults."""
-        # This creates a fresh, temporary instance to grab the default values
-        defaults = self.__class__.__dataclass_fields__
-        for field_name, field_def in defaults.items():
-            if not field_name.startswith("_"):
-                setattr(self, field_name, field_def.default)
-        self.__post_init__()  # Re-trigger the property setters
+        # 1. Convert to dict and filter out private state (e.g., _initialized)
+        # Note: to_JSON_safe handles the nested dataclasses/enums automatically
+        data = {k: v for k, v in asdict(self).items() if not k.startswith("_")}
 
-    def get_penalty_multiplier_for_task_type(self, task_type: TaskType) -> int:
-        """Return the data quality penalty multiplier for a task type."""
-        return (
-            self.classification_data_quality_penalty_multiplier
-            if task_type == TaskType.CLASSIFICATION
-            else self.regression_data_quality_penalty_multiplier
+        # 2. Use your robust handler to save safely
+        save_json(
+            data=data,
+            output_dir=path_obj.parent,
+            filename=path_obj.stem,  # 'prefs.json' -> 'prefs'
+            indent=4,
         )
 
+    def load_from_json(self, path: str | Path) -> None:
+        """
+        Load preferences from a JSON file using the library's safe handler.
+
+        Parameters
+        ----------
+        path : str or Path
+            Path to the target JSON configuration file.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the specified filepath does not exist on disk.
+        ValueError
+            If the file extension is not '.json'.
+        """
+        # Use the robust loader from dsr-files
+        data = load_json(path)
+
+        # Update the singleton instance with the loaded data
+        self.update(**data)
+
+    def reset_defaults(self) -> None:
+        """
+        Restore all configuration attributes to their original hardcoded values.
+
+        This handles both standard default values and default_factory functions
+        to ensure internal dataclass sentinels (MISSING) are not assigned.
+        """
+        self._initialized = False
+        # Access the field definitions from the dataclass
+        class_fields = self.__class__.__dataclass_fields__
+
+        for field_name, field_def in class_fields.items():
+            # Skip internal state trackers
+            if field_name.startswith("_"):
+                continue
+
+            # If the field has a simple default value (int, float, str, etc.)
+            if field_def.default is not MISSING:
+                setattr(self, field_name, field_def.default)
+
+            # If the field uses a factory (like dict or list)
+            elif field_def.default_factory is not MISSING:
+                setattr(self, field_name, field_def.default_factory())
+
+        # Re-run initialization to restore formatters and styles
+        self.__post_init__()
+
+    def get_penalty_multiplier_for_task_type(self, task_type: TaskType) -> int:
+        """Return task-specific data quality penalty."""
+        if task_type == TaskType.CLASSIFICATION:
+            return self.classification_data_quality_penalty_multiplier
+        return self.regression_data_quality_penalty_multiplier
+
     def apply_style(self):
-        """Applies a consistent 'Audit Product' look to all Matplotlib/Seaborn plots."""
+        """Configure global Matplotlib rcParams for a consistent 'Audit' look."""
         plt.rcParams.update(
             {
                 # Font & Text
@@ -430,16 +494,20 @@ class Preferences:
         )
 
     def get_hyperparmeter_display_name(self, raw_name: str) -> str:
-        """Return a short display name for a hyperparameter."""
+        """Format hyperparameter keys for reporting."""
         return self.hp_short_names.get(raw_name, raw_name.replace("_", " ").title())
 
 
-# Global singleton instance
-prefs = Preferences()
+def __getattr__(name: str) -> Any:
+    """Provide a lazy compatibility export for the singleton instance."""
+    if name == "prefs":
+        from dsr_feature_eng_ml.prefs_instance import prefs
+
+        return prefs
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = [
-    "Preferences",
-    "prefs",
-    "ModelColor",
-]
+prefs: Preferences
+
+
+__all__ = ["Preferences", "ModelColor", "prefs"]

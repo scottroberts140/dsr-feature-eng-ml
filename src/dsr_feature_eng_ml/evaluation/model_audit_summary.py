@@ -1,48 +1,50 @@
 """Audit summary model and export utilities."""
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+
 import dataclasses
-from typing import Optional, TYPE_CHECKING, Any, List, Tuple, Set
-import pandas as pd
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
-from dsr_feature_eng_ml.evaluation.schema import (
-    ModelConfiguration,
-    FeatureMetadata,
-    DataSplits,
-)
-from dsr_feature_eng_ml.models import ModelSpecification
-from dsr_feature_eng_ml.enums import ModelType
-from dsr_feature_eng_ml.preferences import prefs
+import pandas as pd
+from dsr_files.csv_handler import save_csv
+from dsr_files.excel_handler import ExcelSheetConfig, save_excel
+from dsr_files.joblib_handler import save_joblib
+from dsr_files.json_handler import save_json
+from dsr_utils.enums import StringCase
 from dsr_utils.formatting import (
+    DateTimeFormat,
+    FloatFormat,
     FormatConfig,
     IntegerFormat,
-    DateTimeFormat,
-    format_label_value_pairs,
+    StringFormat,
     format_as_grid,
+    format_label_value_pairs,
 )
-from dsr_utils.enums import StringCase
 from dsr_utils.strings import (
     convert_list_to_case,
     func_for_string_conv,
     to_original_string,
 )
-from dsr_files.excel_handler import save_excel, ExcelSheetConfig
-from dsr_files.joblib_handler import save_joblib
-from dsr_files.json_handler import save_json
-from dsr_files.csv_handler import save_csv
 
-import pandas as pd
-from pathlib import Path
-from datetime import datetime
+from dsr_feature_eng_ml.enums import ModelType
+from dsr_feature_eng_ml.models import ModelSpecification
+from dsr_feature_eng_ml.prefs_instance import prefs
+
+from .audit_pdf_renderer import AuditPDFRenderer
+from .schema import DataSplits, FeatureMetadata, ModelConfiguration
 
 if TYPE_CHECKING:
     import matplotlib.pyplot as plt
+    from dsr_files.enums import FileType
     from matplotlib.figure import Figure
     from matplotlib.table import Table
     from matplotlib.transforms import Bbox
-    from dsr_files.enums import FileType
 
+# Constants for Anomaly Reporting
 AUDIT_ANOMALY_ACTUAL_COL = "_audit_Actual"
 AUDIT_ANOMALY_PREDICTED_COL = "_audit_Predicted"
 AUDIT_ANOMALY_ABS_ERROR_COL = "_audit_Abs_Error"
@@ -52,470 +54,125 @@ AUDIT_ANOMALY_ABS_ERROR_COL_HEADER = "Abs_Error"
 
 
 class ModelAuditSummary:
-    """Aggregate audit results, metrics, and export helpers."""
+    """
+    Aggregate audit results, metrics, and export helpers.
+
+    Acts as the primary data model for the final audit report, capturing
+    performance across all models, anomaly context, and data distribution stats.
+    """
 
     @dataclass
     class ModelPredictions:
         """Container for validation/test predictions and probabilities."""
 
-        preds_val: Optional[pd.Series] = None
-        probs_val: Optional[pd.DataFrame] = None
-        preds_test: Optional[pd.Series] = None
-        probs_test: Optional[pd.DataFrame] = None
+        preds_val: pd.Series | None = None
+        probs_val: pd.DataFrame | None = None
+        preds_test: pd.Series | None = None
+        probs_test: pd.DataFrame | None = None
 
-    @property
-    def solid_color_palette(self) -> dict:
-        return self._solid_color_palette
+    # --- Internal Attribute Declarations ---
+    _features_to_fit_set: set[FeatureMetadata]
+    _results: list[ModelConfiguration]
+    _row_loss_pct: float = 0.0
 
-    @property
-    def light_color_palette(self) -> dict:
-        return self._light_color_palette
+    # --- Properties ---
+    # Using public attributes for these reduces boilerplate while maintaining V1.2.0 style
 
     @property
     def random_state(self) -> int:
-        return (
-            self.data_splits.random_state
-            if self.data_splits is not None
-            else prefs.random_state
-        )
-
-    @property
-    def data_splits(self) -> DataSplits:
-        return self._data_splits
-
-    @property
-    def results(self) -> list[ModelConfiguration]:
-        return self._results
-
-    @results.setter
-    def results(self, val: list[ModelConfiguration]) -> None:
-        self._results = val
-
-    @property
-    def audit_timestamp(self) -> str:
-        return self._audit_timestamp
-
-    @property
-    def dataset_name(self) -> str:
-        return self._dataset_name
-
-    @property
-    def original_row_count(self) -> int:
-        return self._original_row_count
-
-    @original_row_count.setter
-    def original_row_count(self, val: int) -> None:
-        self._original_row_count = val
-
-    @property
-    def cleaned_row_count(self) -> int:
-        return self._cleaned_row_count
-
-    @cleaned_row_count.setter
-    def cleaned_row_count(self, val: int) -> None:
-        self._cleaned_row_count = val
-
-    @property
-    def dropped_row_count(self) -> int:
-        return self._dropped_row_count
-
-    @dropped_row_count.setter
-    def dropped_row_count(self, val: int) -> None:
-        self._dropped_row_count = val
+        """Return random state from splits or global preferences."""
+        return self.data_splits.random_state if self.data_splits else prefs.random_state
 
     @property
     def row_loss_pct(self) -> float:
+        """Percentage of rows lost during preprocessing."""
         return self._row_loss_pct
 
     @row_loss_pct.setter
     def row_loss_pct(self, val: float) -> None:
-        self._row_loss_pct = val
-
-    @property
-    def train_row_count(self) -> int:
-        return self._train_row_count
-
-    @train_row_count.setter
-    def train_row_count(self, val: int) -> None:
-        self._train_row_count = val
-
-    @property
-    def val_row_count(self) -> int:
-        return self._val_row_count
-
-    @val_row_count.setter
-    def val_row_count(self, val: int) -> None:
-        self._val_row_count = val
-
-    @property
-    def processed_row_count(self) -> int:
-        return self._processed_row_count
-
-    @processed_row_count.setter
-    def processed_row_count(self, val: int) -> None:
-        self._processed_row_count = val
-
-    @property
-    def test_row_count(self) -> int:
-        return self._test_row_count
-
-    @test_row_count.setter
-    def test_row_count(self, val: int) -> None:
-        self._test_row_count = val
-
-    @property
-    def top_n_importance(self) -> int:
-        return self._top_n_importance
-
-    @top_n_importance.setter
-    def top_n_importance(self, val: int) -> None:
-        self._top_n_importance = val
-
-    @property
-    def duration(self) -> float:
-        return self._duration
-
-    @duration.setter
-    def duration(self, val: float) -> None:
-        self._duration = val
-
-    @property
-    def features(self) -> dict[str, FeatureMetadata]:
-        return self._features
-
-    @property
-    def features_used(self) -> List[FeatureMetadata]:
-        return self._features_used
-
-    @property
-    def features_to_fit_set(self) -> Set[FeatureMetadata]:
-        return self._features_to_fit_set
-
-    @property
-    def top_n_anomalies(self) -> int:
-        return self._top_n_anomalies
-
-    @top_n_anomalies.setter
-    def top_n_anomalies(self, val: int) -> None:
-        self._top_n_anomalies = val
-
-    @property
-    def anomaly_display_map(self) -> dict:
-        return self._anomaly_display_map
-
-    @property
-    def actual_value_fmt(self) -> FormatConfig:
-        return self._actual_value_fmt
-
-    @actual_value_fmt.setter
-    def actual_value_fmt(self, val: FormatConfig) -> None:
-        self._actual_value_fmt = val
-
-    @property
-    def predicted_value_fmt(self) -> FormatConfig:
-        return self._predicted_value_fmt
-
-    @predicted_value_fmt.setter
-    def predicted_value_fmt(self, val: FormatConfig) -> None:
-        self._predicted_value_fmt = val
-
-    @property
-    def abs_error_fmt(self) -> FormatConfig:
-        return self._abs_error_fmt
-
-    @abs_error_fmt.setter
-    def abs_error_fmt(self, val: FormatConfig) -> None:
-        self._abs_error_fmt = val
-
-    @property
-    def error_pct_fmt(self) -> FormatConfig:
-        return self._error_pct_fmt
-
-    @error_pct_fmt.setter
-    def error_pct_fmt(self, val: FormatConfig) -> None:
-        self._error_pct_fmt = val
-
-    @property
-    def toc_registry(self) -> list:
-        return self._toc_registry
-
-    @property
-    def anomaly_data(self) -> Optional[pd.DataFrame]:
-        return self._anomaly_data
-
-    @anomaly_data.setter
-    def anomaly_data(self, val: Optional[pd.DataFrame]) -> None:
-        self._anomaly_data = val
-
-    @property
-    def anomaly_dynamic_features(self) -> List[str]:
-        return self._anomaly_dynamic_features
-
-    @anomaly_dynamic_features.setter
-    def anomaly_dynamic_features(self, val: List[str]) -> None:
-        self._anomaly_dynamic_features = val
-
-    @property
-    def anomaly_threshold(self) -> float:
-        return self._anomaly_threshold
-
-    @anomaly_threshold.setter
-    def anomaly_threshold(self, val: float) -> None:
-        self._anomaly_threshold = val
-
-    @property
-    def anomaly_risk_concentration_threshold(self) -> float:
-        return self._anomaly_risk_concentration_threshold
-
-    @anomaly_risk_concentration_threshold.setter
-    def anomaly_risk_concentration_threshold(self, val: float) -> None:
-        self._anomaly_risk_concentration_threshold = val
-
-    @property
-    def model_accuracy_limit(self) -> float:
-        return self._model_accuracy_limit
-
-    @model_accuracy_limit.setter
-    def model_accuracy_limit(self, val: float) -> None:
-        self._model_accuracy_limit = val
-
-    @property
-    def model_acceptable_limit(self) -> float:
-        return self._model_acceptable_limit
-
-    @model_acceptable_limit.setter
-    def model_acceptable_limit(self, val: float) -> None:
-        self._model_acceptable_limit = val
-
-    @property
-    def model_stability_limit(self) -> float:
-        return self._model_stability_limit
-
-    @model_stability_limit.setter
-    def model_stability_limit(self, val: float) -> None:
-        self._model_stability_limit = val
-
-    @property
-    def model_efficiency_threshold(self) -> int:
-        return self._model_efficiency_threshold
-
-    @model_efficiency_threshold.setter
-    def model_efficiency_threshold(self, val: int) -> None:
-        self._model_efficiency_threshold = val
-
-    @property
-    def drift_threshold(self) -> float:
-        return self._drift_threshold
-
-    @drift_threshold.setter
-    def drift_threshold(self, val: float) -> None:
-        self._drift_threshold = val
+        """Allow manual or computed updates to row loss percentage."""
+        self._row_loss_pct = float(val)
 
     def __init__(
         self,
         data_splits: DataSplits,
-        results: list[ModelConfiguration] = [],
+        results: list[ModelConfiguration] | None = None,
         audit_timestamp: str = "",
         dataset_name: str = "Unknown Dataset",
         original_row_count: int = 0,
         cleaned_row_count: int = 0,
         dropped_row_count: int = 0,
-        row_loss_pct: float = 0.0,
         train_row_count: int = 0,
         val_row_count: int = 0,
-        processed_row_count: int = 0,
         test_row_count: int = 0,
         top_n_importance: int = 1,
         duration: float = 0.0,
-        features: dict[str, FeatureMetadata] = {},
+        features: dict[str, FeatureMetadata] | None = None,
         top_n_anomalies: int = 5,
-        anomaly_display_map: dict = {},
-        actual_value_fmt: Any = None,
-        predicted_value_fmt: Any = None,
-        abs_error_fmt: Any = None,
-        error_pct_fmt: Any = None,
-        toc_registry=[],
-        anomaly_data: Optional[pd.DataFrame] = None,
-        anomaly_dynamic_features: List[str] = [],
+        anomaly_display_map: dict[str, str] | None = None,
+        actual_value_fmt: FormatConfig | None = None,
+        predicted_value_fmt: FormatConfig | None = None,
+        abs_error_fmt: FormatConfig | None = None,
+        error_pct_fmt: FormatConfig | None = None,
+        anomaly_data: pd.DataFrame | None = None,
+        anomaly_dynamic_features: list[str] | None = None,
         anomaly_threshold: float = prefs.anomaly_threshold,
-        anomaly_risk_concentration_threshold: float = (
-            prefs.anomaly_risk_concentration_threshold
-        ),
+        anomaly_risk_concentration_threshold: float = prefs.anomaly_risk_concentration_threshold,
         model_accuracy_limit: float = prefs.model_accuracy_limit,
         model_acceptable_limit: float = prefs.model_acceptable_limit,
         model_stability_limit: float = prefs.model_stability_limit,
         model_efficiency_threshold: int = prefs.model_efficiency_threshold,
         drift_threshold: float = prefs.drift_threshold,
     ) -> None:
-        """Initialize the audit summary container.
+        """Initialize the audit summary container."""
+        self.data_splits = data_splits
+        self.results = results or []
+        self.dataset_name = dataset_name
+        self.original_row_count = original_row_count
+        self.cleaned_row_count = cleaned_row_count
+        self.dropped_row_count = dropped_row_count
+        self.train_row_count = train_row_count
+        self.val_row_count = val_row_count
+        self.test_row_count = test_row_count
+        self.processed_row_count = train_row_count + val_row_count
+        self.top_n_importance = top_n_importance
+        self.duration = duration
+        self.features = features or {}
+        self.top_n_anomalies = top_n_anomalies
+        self.anomaly_display_map = anomaly_display_map or {}
+        self.actual_value_fmt = actual_value_fmt or StringFormat()
+        self.predicted_value_fmt = predicted_value_fmt or StringFormat()
+        self.abs_error_fmt = abs_error_fmt or FloatFormat()
+        self.error_pct_fmt = error_pct_fmt or FloatFormat()
+        self.anomaly_data = anomaly_data
+        self.anomaly_dynamic_features = anomaly_dynamic_features or []
+        self.anomaly_threshold = anomaly_threshold
+        self.anomaly_risk_concentration_threshold = anomaly_risk_concentration_threshold
+        self.model_accuracy_limit = model_accuracy_limit
+        self.model_acceptable_limit = model_acceptable_limit
+        self.model_stability_limit = model_stability_limit
+        self.model_efficiency_threshold = model_efficiency_threshold
+        self.drift_threshold = drift_threshold
 
-        Args:
-            data_splits: Train/validation/test splits used for the audit.
-            results: Initial list of model configurations (optional).
-            audit_timestamp: Explicit timestamp label; autogenerated if empty.
-            dataset_name: Friendly dataset name for reporting.
-            original_row_count: Row count before cleaning/splitting.
-            cleaned_row_count: Row count after cleaning.
-            dropped_row_count: Rows dropped during preprocessing.
-            row_loss_pct: Percentage of rows removed.
-            train_row_count: Training row count.
-            val_row_count: Validation row count.
-            processed_row_count: Train + validation count.
-            test_row_count: Test row count.
-            top_n_importance: Number of feature importances to display.
-            duration: Total audit duration in seconds.
-            features: Feature metadata map keyed by column name.
-            top_n_anomalies: Maximum anomalies to capture for reporting.
-            anomaly_display_map: Column display name overrides for anomalies.
-            actual_value_fmt: Formatter for actual values in anomaly reports.
-            predicted_value_fmt: Formatter for predicted values.
-            abs_error_fmt: Formatter for absolute errors.
-            error_pct_fmt: Formatter for percent errors.
-            toc_registry: Table-of-contents registry (PDF rendering).
-            anomaly_data: Cached anomaly dataframe (optional).
-            anomaly_dynamic_features: Feature names used for anomaly context.
-            anomaly_threshold: Percentile threshold for anomaly selection.
-            anomaly_risk_concentration_threshold: Concentration threshold for anomaly risk.
-            model_accuracy_limit: Accuracy cutoff for recommendations.
-            model_acceptable_limit: Acceptable score cutoff.
-            model_stability_limit: Stability cutoff.
-            model_efficiency_threshold: Rows/sec efficiency cutoff.
-            drift_threshold: Drift index cutoff for alerts.
-        """
-        self._data_splits = data_splits
-        self._results = results
-        self._audit_timestamp = audit_timestamp
-        self._dataset_name = dataset_name
-        self._original_row_count = original_row_count
-        self._cleaned_row_count = cleaned_row_count
-        self._dropped_row_count = dropped_row_count
-        self._row_loss_pct = row_loss_pct
-        self._train_row_count = train_row_count
-        self._val_row_count = val_row_count
-        self._processed_row_count = processed_row_count
-        self._test_row_count = test_row_count
-        self._top_n_importance = top_n_importance
-        self._duration = duration
-        self._features = features
-        self._top_n_anomalies = top_n_anomalies
-        self._anomaly_display_map = anomaly_display_map
-        self._actual_value_fmt = actual_value_fmt
-        self._predicted_value_fmt = predicted_value_fmt
-        self._abs_error_fmt = abs_error_fmt
-        self._error_pct_fmt = error_pct_fmt
-        self._toc_registry = toc_registry
-        self._anomaly_data = anomaly_data
-        self._anomaly_dynamic_features = anomaly_dynamic_features
-        self._anomaly_threshold = anomaly_threshold
-        self._anomaly_risk_concentration_threshold = (
-            anomaly_risk_concentration_threshold
-        )
-        self._model_accuracy_limit = model_accuracy_limit
-        self._model_acceptable_limit = model_acceptable_limit
-        self._model_stability_limit = model_stability_limit
-        self._model_efficiency_threshold = model_efficiency_threshold
-        self._drift_threshold = drift_threshold
-
-        # Create timestamp (Format: 20251227_1935) when not provided
-        if not self._audit_timestamp:
-            timestamp_format = DateTimeFormat(
+        # Initialize Audit Timestamp
+        if not audit_timestamp:
+            ts_fmt = DateTimeFormat(
                 date_format="%Y%m%d", time_format="%H%M", separator="_"
             )
-            self._audit_timestamp = timestamp_format.format_value(datetime.now())
-        self._features_used = list(self.features.values())
-        self._features_used = sorted(
-            self._features_used, key=lambda fm: fm.name.lower()
+            self.audit_timestamp = ts_fmt.format_value(datetime.now())
+        else:
+            self.audit_timestamp = audit_timestamp
+
+        # Sort features for consistent reporting
+        self.features_used = sorted(
+            list(self.features.values()), key=lambda fm: fm.name.lower()
         )
-        self._solid_color_palette: dict = prefs.get_solid_palette()
-        self._light_color_palette: dict = prefs.get_light_palette()
+
+        self.solid_color_palette = prefs.get_solid_palette()
+        self.light_color_palette = prefs.get_light_palette()
+
+        # Internal state initialization
         self._init_features_to_fit_set()
-
-    def __setstate__(self, state):
-        """Restore state from persisted data and recompute missing outputs.
-
-        On unpickle, missing prediction/probability artifacts are recomputed
-        so older saved summaries remain usable.
-        """
-        # This logic runs when the object is being 'unpickled'
-        # Update the internal dictionary with the loaded state
-        self.__dict__.update(state)
-
-        new_results: list[ModelConfiguration] = []
-        for config in self.results:
-            print(f"Preprocessing model: {config.model_type.value}")
-            model_spec = ModelSpecification.create_model_from_config(config)
-            val_result: Optional[ModelConfiguration] = None
-            test_result: Optional[ModelConfiguration] = None
-            new_result: Optional[ModelConfiguration] = None
-            if config.has_val_set_evaluation_scores and config.preds_val is None:
-                if model_spec is not None:
-                    val_result = model_spec.fit_and_evaluate_val(
-                        data_splits=self.data_splits,
-                        id=config.id,
-                        features_to_fit_set=self.features_to_fit_set,
-                        score_cv=config.score_cv,
-                        use_combined_data=config.use_combined_data,
-                        filter_outliers=config.filter_outliers,
-                        outlier_count=config.outlier_count,
-                    )
-                    if val_result is not None:
-                        new_result = dataclasses.replace(
-                            config,
-                            score_train=val_result.score_train,
-                            score_val=val_result.score_val,
-                            score_val_cleaned=val_result.score_val_cleaned,
-                            mae_train=val_result.mae_train,
-                            mae_val=val_result.mae_val,
-                            mse_train=val_result.mse_train,
-                            mse_val=val_result.mse_val,
-                            r2_train=val_result.r2_train,
-                            r2_val=val_result.r2_val,
-                            r2_val_cleaned=val_result.r2_val_cleaned,
-                            accuracy_train=val_result.accuracy_train,
-                            accuracy_val=val_result.accuracy_val,
-                            accuracy_val_cleaned=val_result.accuracy_val_cleaned,
-                            preds_val=val_result.preds_val,
-                            probs_val=val_result.probs_val,
-                        )
-
-                if config.has_test_set_evaluation_scores and config.preds_test is None:
-                    if model_spec is not None:
-                        test_result = model_spec.evaluate_test_set_performance(
-                            data_splits=self.data_splits,
-                            config=config,
-                            features_to_fit_set=self.features_to_fit_set,
-                        )
-                        if test_result is not None:
-                            if new_result is not None:
-                                new_result = dataclasses.replace(
-                                    new_result,
-                                    has_test_set_evaluation_scores=True,
-                                    score_test=test_result.score_test,
-                                    mae_test=test_result.mae_test,
-                                    mse_test=test_result.mse_test,
-                                    r2_test=test_result.r2_test,
-                                    accuracy_test=test_result.accuracy_test,
-                                    preds_test=test_result.preds_test,
-                                    probs_test=test_result.probs_test,
-                                    test_mean=test_result.test_mean,
-                                    test_std=test_result.test_std,
-                                    test_median=test_result.test_median,
-                                    test_skew=test_result.test_skew,
-                                    test_kurtosis=test_result.test_kurtosis,
-                                )
-                            else:
-                                new_result = test_result
-
-            if new_result is not None:
-                new_results.append(new_result)
-            else:
-                new_results.append(config)
-
-        self.results = new_results
-
-        # Check for attributes that might be missing from older versions
-        # if "anomaly_threshold" not in state:
-        #    self.anomaly_threshold = prefs.anomaly_threshold
 
     def _init_features_to_fit_set(self) -> None:
         """Initialize the features-to-fit set excluding the target column."""
@@ -524,26 +181,117 @@ class ModelAuditSummary:
             target_column=self.data_splits.target_column,
         )
 
+    @property
+    def features_to_fit_set(self) -> set[FeatureMetadata]:
+        """Set of features eligible for model fitting."""
+        return self._features_to_fit_set
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Restore state and recompute missing prediction artifacts.
+
+        On unpickle, if prediction or probability artifacts are missing from the
+        config (common in older saves), they are recomputed to ensure the
+        audit remains fully interactive.
+        """
+        self.__dict__.update(state)
+
+        # Ensure feature set is initialized before re-running fits
+        self._init_features_to_fit_set()
+
+        new_results: list[ModelConfiguration] = []
+
+        for config in self.results:
+            model_spec = ModelSpecification.create_model_from_config(config)
+            if model_spec is None:
+                new_results.append(config)
+                continue
+
+            current_cfg = config
+
+            # 1. Recompute Validation Artifacts if missing
+            if config.has_val_set_evaluation_scores and config.preds_val is None:
+                val_res = model_spec.fit_and_evaluate_val(
+                    data_splits=self.data_splits,
+                    id=config.id,
+                    features_to_fit_set=self.features_to_fit_set,
+                    score_cv=config.score_cv,
+                    use_combined_data=config.use_combined_data,
+                    filter_outliers=config.filter_outliers,
+                    outlier_count=config.outlier_count,
+                )
+                if val_res:
+                    current_cfg = dataclasses.replace(
+                        current_cfg,
+                        score_train=val_res.score_train,
+                        score_val=val_res.score_val,
+                        score_val_cleaned=val_res.score_val_cleaned,
+                        mae_train=val_res.mae_train,
+                        mae_val=val_res.mae_val,
+                        mse_train=val_res.mse_train,
+                        mse_val=val_res.mse_val,
+                        r2_train=val_res.r2_train,
+                        r2_val=val_res.r2_val,
+                        r2_val_cleaned=val_res.r2_val_cleaned,
+                        accuracy_train=val_res.accuracy_train,
+                        accuracy_val=val_res.accuracy_val,
+                        accuracy_val_cleaned=val_res.accuracy_val_cleaned,
+                        preds_val=val_res.preds_val,
+                        probs_val=val_res.probs_val,
+                    )
+
+            # 2. Recompute Test Artifacts if missing
+            if config.has_test_set_evaluation_scores and config.preds_test is None:
+                test_res = model_spec.evaluate_test_set_performance(
+                    data_splits=self.data_splits,
+                    config=current_cfg,
+                    features_to_fit_set=self.features_to_fit_set,
+                )
+                if test_res:
+                    current_cfg = dataclasses.replace(
+                        current_cfg,
+                        score_test=test_res.score_test,
+                        mae_test=test_res.mae_test,
+                        mse_test=test_res.mse_test,
+                        r2_test=test_res.r2_test,
+                        accuracy_test=test_res.accuracy_test,
+                        preds_test=test_res.preds_test,
+                        probs_test=test_res.probs_test,
+                        test_mean=test_res.test_mean,
+                        test_std=test_res.test_std,
+                        test_median=test_res.test_median,
+                        test_skew=test_res.test_skew,
+                        test_kurtosis=test_res.test_kurtosis,
+                    )
+
+            new_results.append(current_cfg)
+
+        self.results = new_results
+
     @classmethod
-    def from_joblib(cls, filepath: Path) -> "ModelAuditSummary":
-        """Load a saved audit summary from a joblib file.
+    def from_joblib(cls, filepath: Path) -> ModelAuditSummary:
+        """
+        Load a saved audit summary from a joblib file.
 
-        Args:
-            filepath: Path to the joblib file.
+        Parameters
+        ----------
+        filepath : Path
+            The location of the .joblib file.
 
-        Returns:
-            Loaded `ModelAuditSummary` instance.
-
-        Raises:
-            TypeError: If the file contents are not a `ModelAuditSummary`.
+        Returns
+        -------
+        ModelAuditSummary
+            The hydrated summary instance.
         """
         from dsr_files.joblib_handler import load_joblib
 
         loaded_data = load_joblib(filepath=filepath)
 
-        # If it's already an instance
         if not isinstance(loaded_data, cls):
-            raise TypeError(f"File at {filepath} is a {type(loaded_data)}, not {cls}")
+            raise TypeError(
+                f"File at {filepath} contains {type(loaded_data)}, "
+                f"expected {cls.__name__}"
+            )
 
         return loaded_data
 
@@ -552,56 +300,63 @@ class ModelAuditSummary:
         self.results.append(config)
 
     @property
-    def best_overall_model(self) -> Optional[ModelConfiguration]:
-        """Return the highest scoring model regardless of type.
-
-        Returns:
-            The best `ModelConfiguration`, or None if no results exist.
+    def best_overall_model(self) -> ModelConfiguration | None:
+        """
+        Return the highest scoring model based on ModelConfiguration sorting.
         """
         if not self.results:
             return None
-        # Uses the __lt__ implementation in ModelConfiguration for comparison
+        # Uses the __lt__ implementation from ModelConfiguration
         return max(self.results)
 
-    def _calculate_row_counts(self):
-        """Derive row counts and loss metrics from the current data splits."""
+    def _calculate_row_counts(self) -> None:
+        """Derive row counts and data loss metrics from current splits."""
         ds = self.data_splits
         self.train_row_count = len(ds.train_features)
         self.val_row_count = len(ds.val_features)
-        self.processed_row_count = self.train_row_count + self.val_row_count
         self.test_row_count = len(ds.test_features)
-        self.cleaned_row_count = (
-            self.train_row_count + self.val_row_count + self.test_row_count
-        )
+
+        self.processed_row_count = self.train_row_count + self.val_row_count
+        self.cleaned_row_count = self.processed_row_count + self.test_row_count
+
         self.dropped_row_count = ds.original_row_count - self.cleaned_row_count
-        self.row_loss_pct = (self.dropped_row_count / ds.original_row_count) * 100
 
-    def get_state(self, include_preds: bool = False) -> dict:
-        """Export the full audit snapshot as a serializable dictionary.
+        if ds.original_row_count > 0:
+            self.row_loss_pct = (self.dropped_row_count / ds.original_row_count) * 100
+        else:
+            self.row_loss_pct = 0.0
 
-        Args:
-            include_preds: If True, include prediction/probability arrays in results.
-
-        Returns:
-            Dictionary containing metadata and per-model results.
+    def get_state(self, include_preds: bool = False) -> dict[str, Any]:
         """
-        import numpy as np
+        Export the full audit snapshot as a serializable dictionary.
 
-        # Calculate aggregate stats
-        total_cpu_time = sum(res.total_duration for res in self.results)
-        max_ram_observed = max(res.actual_peak_gb for res in self.results)
+        Parameters
+        ----------
+        include_preds : bool, default False
+            If True, converts large prediction arrays into lists for the export.
+
+        Returns
+        -------
+        dict[str, Any]
+            A nested dictionary of metadata, aggregate stats, and per-model results.
+        """
+        # Calculate aggregate compute metrics
+        total_cpu = sum(res.total_duration for res in self.results)
+        max_ram = max((res.actual_peak_gb for res in self.results), default=0.0)
         total_fits = sum(res.num_candidates * res.cv for res in self.results)
 
-        # Calculate avg efficiency safely
-        efficiencies = [
+        # Calculate average efficiency (rows/sec) safely
+        eff_list = [
             res.efficiency(data_splits=self.data_splits) for res in self.results
         ]
-        efficiencies = [e for e in efficiencies if e > 0]
-        avg_efficiency = np.mean(efficiencies) if efficiencies else 0
+        valid_eff = [e for e in eff_list if e > 0]
+        avg_efficiency = float(np.mean(valid_eff)) if valid_eff else 0.0
 
         return {
             "metadata": {
                 "timestamp": self.audit_timestamp,
+                "dataset_name": self.dataset_name,
+                "duration_seconds": self.duration,
                 "row_counts": {
                     "train": self.train_row_count,
                     "val": self.val_row_count,
@@ -612,77 +367,98 @@ class ModelAuditSummary:
                     "row_loss_pct": self.row_loss_pct,
                     "processed": self.processed_row_count,
                 },
-                "top_n_importance": self.top_n_importance,
-                "dataset_name": self.dataset_name,
-                "duration": self.duration,
                 "anomalies": {
                     "threshold": self.anomaly_threshold,
                     "display_map": self.anomaly_display_map,
-                    "data": (
-                        self.anomaly_data
-                        if self.anomaly_data is not None
-                        else pd.DataFrame()
-                    ),
-                    "dynamic_features": self.anomaly_dynamic_features,
                     "top_n": self.top_n_anomalies,
+                    "dynamic_features": self.anomaly_dynamic_features,
                     "formats": {
                         "actual": self.actual_value_fmt.to_dict(),
                         "predicted": self.predicted_value_fmt.to_dict(),
                         "abs_error": self.abs_error_fmt.to_dict(),
                     },
-                },
-                "model_limits": {
-                    "accuracy": self.model_accuracy_limit,
-                    "acceptable": self.model_acceptable_limit,
-                    "stability": self.model_stability_limit,
-                    "efficiency_threshold": self.model_efficiency_threshold,
+                    # DataFrame conversion to list of records for JSON
+                    "data": (
+                        self.anomaly_data.to_dict(orient="records")
+                        if self.anomaly_data is not None
+                        else []
+                    ),
                 },
                 "aggregate_stats": {
-                    "total_computational_time": total_cpu_time,
-                    "peak_system_ram_usage_gb": max_ram_observed,
-                    "total_cv_fits_performed": total_fits,
-                    "average_efficiency_rows_per_sec": avg_efficiency,
+                    "total_cpu_time": total_cpu,
+                    "peak_ram_gb": max_ram,
+                    "total_cv_fits": total_fits,
+                    "avg_rows_per_sec": avg_efficiency,
                 },
-                "features": {
-                    key: feature.to_dict() for key, feature in self.features.items()
+                "model_limits": {
+                    "accuracy_min": self.model_accuracy_limit,
+                    "acceptable_min": self.model_acceptable_limit,
+                    "stability_min": self.model_stability_limit,
+                    "efficiency_min": self.model_efficiency_threshold,
                 },
+                "features": {k: f.to_dict() for k, f in self.features.items()},
             },
             "results": [
-                config.to_dict(include_preds=include_preds) for config in self.results
+                res.to_dict(include_preds=include_preds) for res in self.results
             ],
         }
 
-    def capture_anomaly_context(self) -> None:
-        """Capture anomaly rows and dynamic features for the best model.
+    def create_metadata(self) -> None:
+        """
+        Compute and finalize metadata describing the audit dataset and results.
 
-        Computes absolute error percentiles to select anomalies, then stores
-        the top rows plus the highest-kurtosis numeric features for context.
+        This method synchronizes row counts, loss percentages, and feature sets
+        to ensure all reporting properties are accurate before export.
+        """
+        # 1. Update features-to-fit set in case metadata was added late
+        self._init_features_to_fit_set()
+
+        # 2. Recalculate row counts and data loss metrics
+        # This handles the row_loss_pct assignment through the @setter logic
+        self._calculate_row_counts()
+
+        # 3. Guard against early calls before models have finished
+        if len(self.results) == 0:
+            return
+
+    def capture_anomaly_context(self) -> None:
+        """
+        Identify high-error rows and high-kurtosis features for audit context.
+
+        Analyzes the best-performing model to extract outliers and identifies
+        features with the most extreme distributions to aid in error analysis.
         """
         config = self.best_overall_model
-
         if config is None:
             return
 
-        X_val = self.data_splits.val_features
+        # 1. Calculate Absolute Errors
         y_val = self.data_splits.val_target
-        preds_val = config.preds_val if config.preds_val is not None else pd.Series()
-        # Re-calculate or retrieve the top n anomalies absolute errors
+        preds_val = (
+            config.preds_val
+            if config.preds_val is not None
+            else pd.Series(dtype="float64")
+        )
+
+        # Flatten and align to ensure matching indices
         abs_errors = np.abs(y_val.to_numpy().flatten() - preds_val.to_numpy().flatten())
+
+        # 2. Extract Anomaly Mask
+        # We use a percentile-based threshold (e.g., top 5% of errors)
         threshold = np.percentile(abs_errors, self.anomaly_threshold)
         anomaly_mask = abs_errors >= threshold
 
-        anomalies_scaled = X_val.iloc[anomaly_mask].copy()
+        # 3. Build Anomaly DataFrame (Inverting Scaling for Readability)
+        anomalies_scaled = self.data_splits.val_features.iloc[anomaly_mask].copy()
         anomalies = self.data_splits.inverse_transform_df(anomalies_scaled)
+
         anomalies[AUDIT_ANOMALY_ACTUAL_COL] = y_val.iloc[anomaly_mask].values
         anomalies[AUDIT_ANOMALY_PREDICTED_COL] = preds_val.iloc[anomaly_mask].values
         anomalies[AUDIT_ANOMALY_ABS_ERROR_COL] = abs_errors[anomaly_mask]
 
-        # FILTER: Only look at numeric columns for kurtosis
-        # This prevents the "Categorical does not support reduction kurt" error
-        numeric_df = X_val.select_dtypes(include=[np.number])
-
-        # Calculate kurtosis only on the numeric subset
-        # Rank them to see which features have the most extreme outliers
+        # 4. Identify High-Kurtosis Features (Dynamic Context)
+        # Only numeric columns support kurtosis calculations
+        numeric_df = self.data_splits.val_features.select_dtypes(include=[np.number])
         dynamic_features = (
             numeric_df.kurt()
             .sort_values(ascending=False)
@@ -690,48 +466,33 @@ class ModelAuditSummary:
             .tolist()
         )
 
+        # 5. Store Results Sorted by Error Magnitude
         self.anomaly_data = anomalies.sort_values(
             AUDIT_ANOMALY_ABS_ERROR_COL, ascending=False
         )
         self.anomaly_dynamic_features = dynamic_features
 
-    def create_metadata(self) -> None:
-        """Populate derived metadata such as row counts and loss metrics."""
-        if len(self.results) == 0:
-            return
-        self._calculate_row_counts()
-
     def get_summary_data(
         self,
         config: ModelConfiguration,
-        key_value_case: StringCase = StringCase.ORIGINAL,
-    ) -> dict:
-        """Build a flat summary record for a single model configuration.
-
-        Args:
-            config: Model configuration to summarize.
-            key_value_case: Optional case conversion for keys/values.
-
-        Returns:
-            Dictionary of summary metrics keyed by display labels.
+        key_case: StringCase = StringCase.ORIGINAL,
+    ) -> dict[str, Any]:
         """
-        import dataclasses
+        Build a flat summary record for a single model configuration.
 
-        if config.score_train is not None:
-            train_score = config.score_train
-        else:
-            train_score = 0.0
+        Parameters
+        ----------
+        config : ModelConfiguration
+            The specific run to summarize.
+        key_case : StringCase, default ORIGINAL
+            The casing convention to apply to the dictionary keys.
+        """
+        # Ensure scores are non-null for the summary
+        train_s = config.score_train or 0.0
+        val_s = config.score_val or 0.0
+        clean_s = config.score_val_cleaned or 0.0
 
-        if config.score_val is not None:
-            val_score = config.score_val
-        else:
-            val_score = 0.0
-
-        if config.score_val_cleaned is not None:
-            cleaned_score = config.score_val_cleaned
-        else:
-            cleaned_score = 0.0
-
+        # Mapping key display labels
         keys = [
             "ID",
             "Model",
@@ -744,51 +505,51 @@ class ModelAuditSummary:
             "n_jobs",
             "Val Score",
             "Cleaned Score",
-            "Total Duration",
+            "Duration",
             "Efficiency",
             "Train Score",
             "Gap",
             "Status",
             "Train Mean",
-            "Train Std Dev",
+            "Train Std",
             "Train Median",
             "Train Skew",
-            "Train Kurtosis",
+            "Train Kurt",
             "Val Mean",
-            "Val Std Dev",
+            "Val Std",
             "Val Median",
             "Val Skew",
-            "Val Kurtosis",
+            "Val Kurt",
             "Mean Delta",
-            "Std Dev Delta",
+            "Std Delta",
             "Quality Score",
             "Drift Index",
         ]
 
-        if key_value_case == StringCase.ORIGINAL:
-            str_convert_func = to_original_string
+        # Apply casing transformation
+        if key_case != StringCase.ORIGINAL:
+            keys = convert_list_to_case(keys, key_case)
+            conv_f = func_for_string_conv(key_case)
         else:
-            keys = convert_list_to_case(keys, key_value_case)
-            str_convert_func = func_for_string_conv(key_value_case)
+            conv_f = to_original_string
 
-        # These values must be in the same order as the items in keys
         values = [
             config.id,
-            str_convert_func(config.model_type.value),
-            str_convert_func(config.balancing_strategy.value),
+            conv_f(config.model_type.value),
+            conv_f(config.balancing_strategy.value),
             config.available_gb,
             config.estimated_peak_gb,
             config.actual_peak_gb,
-            bool(config.memory_risk_triggered),
+            config.memory_risk_triggered,
             config.sampling_factor,
             config.concurrent_workers,
-            val_score,
-            cleaned_score,
+            val_s,
+            clean_s,
             config.total_duration,
-            config.efficiency,
-            train_score,
+            config.efficiency(self.data_splits),
+            train_s,
             config.gap,
-            str_convert_func(config.model_generalization.value),
+            conv_f(config.model_generalization.value),
             config.train_mean,
             config.train_std,
             config.train_median,
@@ -804,58 +565,54 @@ class ModelAuditSummary:
             config.quality_score,
             config.drift_index,
         ]
-        data = {key: value for key, value in zip(keys, values)}
-        return data
+
+        return dict(zip(keys, values))
 
     def get_leaderboard(self) -> str:
-        """Generate the console leaderboard string for the audit report.
-
-        Returns:
-            Formatted string containing header metadata and summary table.
-        """
-        # 1. Pull the already-calculated state
+        """Generate the console-friendly leaderboard summary."""
         state = self.get_state(include_preds=False)
         meta = state["metadata"]
-        stats = meta["aggregate_stats"]
+        counts = meta["row_counts"]
 
-        # 2. Build the Console Header
-        # We reconstruct the display pairs from the state dictionary
-        row_count_format = IntegerFormat()
-        row_counts = meta["row_counts"]
-        display_pairs = [
+        i_fmt = IntegerFormat()
+
+        # 1. Build Metadata Header
+        header_pairs = [
             ("Timestamp", meta["timestamp"]),
+            ("Dataset", meta["dataset_name"]),
             (
-                "Train/Val/Test Rows",
-                f"{row_count_format.format_value(row_counts['train'])} / {row_count_format.format_value(row_counts['val'])} / {row_count_format.format_value(row_counts['test'])}",
+                "Rows (T/V/Te)",
+                f"{i_fmt.format_value(counts['train'])} / "
+                f"{i_fmt.format_value(counts['val'])} / "
+                f"{i_fmt.format_value(counts['test'])}",
             ),
-            ("Total Duration", stats["total_computational_time"]),
-            ("Peak RAM", stats["peak_system_ram_usage_gb"]),
+            ("Duration", f"{meta['duration_seconds']:.2f}s"),
+            ("Peak RAM", f"{meta['aggregate_stats']['peak_ram_gb']:.2f} GB"),
         ]
 
-        # Format the features as a grid for the console
-        grid_padding = max(len(f.name) for f in self.features_used) + 4
-        features_grid = format_as_grid(
-            input=[s.name for s in self.features_used],
+        grid_pad = max((len(f.name) for f in self.features_used), default=10) + 4
+        feat_grid = format_as_grid(
+            input=[f.name for f in self.features_used],
             cols=3,
-            padding=grid_padding,
+            padding=grid_pad,
             indent=4,
         )
 
-        meta_header = (
-            f"\n--- Audit Snapshot: {self.audit_timestamp} ---\n"
-            f"{format_label_value_pairs(display_pairs, padding=4)}\n"
-            f"    Features:\n{features_grid}\n"
-            f"{'-' * prefs.report_width}"
+        header = (
+            f"\n{'='*prefs.report_width}\n"
+            f"AUDIT SNAPSHOT: {self.dataset_name}\n"
+            f"{'-'*prefs.report_width}\n"
+            f"{format_label_value_pairs(header_pairs, padding=4)}\n"
+            f"Features Analyzed:\n{feat_grid}\n"
+            f"{'-'*prefs.report_width}\n"
         )
 
-        # 3. Build the Table using existing row logic
-        # We use results directly from the object to get the full list
-        summary = [self.get_summary_data(config=config) for config in self.results]
+        # 2. Build Results Table
+        summary_list = [self.get_summary_data(cfg) for cfg in self.results]
+        df = pd.DataFrame(summary_list).sort_values("Val Score", ascending=False)
 
-        df = pd.DataFrame(summary).sort_values("Val Score", ascending=False)
-
-        # Optional: Select a subset of columns for the console to prevent wrapping
-        console_cols = [
+        # Truncate columns for console display to prevent wrapping
+        display_cols = [
             "ID",
             "Model",
             "Val Score",
@@ -864,31 +621,49 @@ class ModelAuditSummary:
             "Status",
             "Efficiency",
         ]
+        return (
+            header
+            + df[display_cols].to_string(index=False)
+            + f"\n{'='*prefs.report_width}\n"
+        )
 
-        return meta_header + "\n" + df[console_cols].to_string(index=False)
-
-    def get_best_by_type(self, model_type: ModelType) -> Optional[ModelConfiguration]:
-        """Return the highest scoring model for a specific model type.
-
-        Args:
-            model_type: Model type to filter results.
-
-        Returns:
-            Best `ModelConfiguration` for that type, or None if none exist.
+    def get_best_by_type(self, model_type: ModelType) -> ModelConfiguration | None:
         """
-        type_results = [r for r in self.results if r.model_type == model_type]
-        return max(type_results) if type_results else None
+        Retrieve the highest-scoring configuration for a specific model type.
 
-    def _extract_preds_and_probs(self) -> List[ModelPredictions]:
-        """Detach prediction/probability arrays from results for serialization.
+        Parameters
+        ----------
+        model_type : ModelType
+            The specific architecture to filter for (e.g., ModelType.RANDOM_FOREST).
 
-        Returns:
-            List of `ModelPredictions` aligned to the results list.
+        Returns
+        -------
+        ModelConfiguration | None
+            The top-performing instance of that type, or None if not found.
         """
-        new_results: List[ModelConfiguration] = []
-        model_predictions: List[ModelAuditSummary.ModelPredictions] = []
+        # Filter results for the requested type
+        typed_results = [r for r in self.results if r.model_type == model_type]
+
+        if not typed_results:
+            return None
+
+        # Returns the max based on ModelConfiguration's __lt__ (score_val)
+        return max(typed_results)
+
+    def _extract_preds_and_probs(self) -> list[ModelPredictions]:
+        """
+        Detach prediction/probability arrays from results for memory-safe serialization.
+
+        Returns
+        -------
+        list[ModelPredictions]
+            A list of prediction containers aligned index-for-index with the results list.
+        """
+        new_results: list[ModelConfiguration] = []
+        model_predictions: list[ModelAuditSummary.ModelPredictions] = []
 
         for config in self.results:
+            # 1. Capture the arrays in the side-car container
             model_predictions.append(
                 ModelAuditSummary.ModelPredictions(
                     preds_val=config.preds_val,
@@ -897,6 +672,8 @@ class ModelAuditSummary:
                     probs_test=config.probs_test,
                 )
             )
+
+            # 2. Clear the arrays from the main config to reduce object size
             new_results.append(
                 dataclasses.replace(
                     config,
@@ -911,24 +688,30 @@ class ModelAuditSummary:
         return model_predictions
 
     def _restore_preds_and_probs(
-        self, model_predictions: List[ModelPredictions]
+        self, model_predictions: list[ModelPredictions]
     ) -> None:
-        """Restore prediction/probability arrays to results after serialization.
-
-        Args:
-            model_predictions: Extracted predictions to reattach.
         """
-        new_results: List[ModelConfiguration] = []
-        for index in range(len(model_predictions)):
-            model_prediction = model_predictions[index]
-            config = self.results[index]
+        Reattach prediction/probability arrays to results after serialization tasks.
+
+        Parameters
+        ----------
+        model_predictions : list[ModelPredictions]
+            The list of prediction containers to re-merge into the results.
+        """
+        # Ensure we are iterating based on the current results length to maintain alignment
+        new_results: list[ModelConfiguration] = []
+
+        for index, config in enumerate(self.results):
+            # We use index-based lookup to match the 'side-car' list back to the configs
+            pred_set = model_predictions[index]
+
             new_results.append(
                 dataclasses.replace(
                     config,
-                    preds_val=model_prediction.preds_val,
-                    probs_val=model_prediction.probs_val,
-                    preds_test=model_prediction.preds_test,
-                    probs_test=model_prediction.probs_test,
+                    preds_val=pred_set.preds_val,
+                    probs_val=pred_set.probs_val,
+                    preds_test=pred_set.preds_test,
+                    probs_test=pred_set.probs_test,
                 )
             )
 
@@ -943,197 +726,203 @@ class ModelAuditSummary:
         append_timestamp_to_save_path: bool = False,
         report_title: str = "Model Audit Report",
     ) -> Path:
-        """Export audit results to CSV/JSON/JOBLIB/Excel/PDF.
+        """
+        Export audit results to CSV, JSON, JOBLIB, Excel, or PDF.
 
-        Args:
-            prefix: File name prefix (e.g., "Audit_State").
-            file_type: Output formats to generate.
-            path: Output directory or full path.
-            path_is_full_path: Treat `path` as a full file path if True.
-            append_timestamp_to_save_path: Append audit timestamp to output directory.
-            report_title: Title used for PDF reports.
+        Parameters
+        ----------
+        prefix : str
+            Filename prefix (e.g., "Audit_State").
+        file_type : FileType
+            A single FileType or bitmask of types to generate.
+        path : Path
+            Output directory or full file path.
+        path_is_full_path : bool, default False
+            If True, treats 'path' as the final destination file.
+        append_timestamp_to_save_path : bool, default False
+            Append audit timestamp to the output directory.
+        report_title : str, default "Model Audit Report"
+            The title applied to PDF/Excel report headers.
 
-        Returns:
-            Path to the final exported file for the last format written.
+        Returns
+        -------
+        Path
+            The path to the primary file generated.
         """
         from dsr_files.enums import FileType
         from dsr_files.json_handler import to_JSON_safe
 
-        export_payload = {}
-        export_payload["audit_id"] = f"{prefix}_{self.audit_timestamp}"
-        export_payload["data_quality_score"] = self.results[0].quality_score
-
+        # 1. Resolve Pathing and Filenames
         if not path_is_full_path:
-            output_path = Path(path)
-
+            output_dir = Path(path)
             if append_timestamp_to_save_path:
-                output_path = output_path / self.audit_timestamp
-
+                output_dir = output_dir / self.audit_timestamp
             filename = f"{prefix}_{self.audit_timestamp}"
         else:
-            output_path = path.parent
+            output_dir = path.parent
             filename = path.stem
 
+        output_dir.mkdir(parents=True, exist_ok=True)
         full_path = Path()
-        export_payload = self.get_state(include_preds=False)
 
-        # Metadata file
-        # Flatten the nested dicts like 'row_counts' and 'aggregate_stats'
-        # so they look good in a two-column CSV.
+        # 2. Prepare Payload (Lightweight for JSON/CSV/Excel)
+        export_payload = self.get_state(include_preds=False)
         metadata = export_payload["metadata"]
         anomalies = metadata["anomalies"]
-        anomaly_display_map = anomalies["display_map"]
-        features = to_JSON_safe(metadata["features"])
-        meta_extract = {
+
+        # Flattened metadata for tabular exports (CSV/Excel)
+        meta_flat = {
             "audit_id": f"{prefix}_{self.audit_timestamp}",
             "timestamp": metadata["timestamp"],
             **metadata["row_counts"],
             **metadata["aggregate_stats"],
-            "features": features,
+            "features_json": to_JSON_safe(metadata["features"]),
         }
 
+        # --- CSV Export Logic ---
         if FileType.CSV in file_type:
-            df_metadata = pd.DataFrame(list(meta_extract.items()))
-            _ = save_csv(
-                data=df_metadata,
-                filepath=output_path,
-                filename=f"{filename}_metadata",
+            # Metadata Summary
+            save_csv(
+                pd.DataFrame(list(meta_flat.items())),
+                output_dir,
+                f"{filename}_metadata",
                 header=False,
             )
 
-            # Anomaly mapping
-            df_anomaly_display_map = pd.DataFrame([anomaly_display_map])
-            _ = save_csv(
-                data=df_anomaly_display_map,
-                filepath=output_path,
-                filename=f"{filename}_anomaly_display_map",
+            # Anomaly Context
+            save_csv(
+                pd.DataFrame([anomalies["display_map"]]),
+                output_dir,
+                f"{filename}_anomaly_map",
+                header=False,
+            )
+            save_csv(
+                pd.DataFrame(anomalies["data"]), output_dir, f"{filename}_anomaly_data"
+            )
+            save_csv(
+                pd.DataFrame([anomalies["dynamic_features"]]),
+                output_dir,
+                f"{filename}_dynamic_features",
                 header=False,
             )
 
-            # Anomaly data file
-            df_anomaly_data = anomalies["data"]
-            _ = save_csv(
-                data=df_anomaly_data,
-                filepath=output_path,
-                filename=f"{filename}_anomaly_data",
-            )
-
-            # Anomaly dynanmic features file
-            df_anomaly_dynamic_features = pd.DataFrame([anomalies["dynamic_features"]])
-            _ = save_csv(
-                data=df_anomaly_dynamic_features,
-                filepath=output_path,
-                filename=f"{filename}_anomaly_dynamic_features",
-                header=False,
-            )
-
-            # Results file
+            # Main Results (Leaderboard)
             full_path = save_csv(
-                data=pd.DataFrame(export_payload["results"]),
-                filepath=output_path,
-                filename=filename,
+                pd.DataFrame(export_payload["results"]), output_dir, filename
             )
 
+        # --- JSON Export Logic ---
         if FileType.JSON in file_type:
-            full_path = save_json(
-                data=export_payload, filepath=output_path, filename=filename
-            )
+            full_path = save_json(export_payload, output_dir, filename)
 
+        # --- JOBLIB Export Logic (Full State) ---
         if FileType.JOBLIB in file_type:
-            model_predictions: List[ModelAuditSummary.ModelPredictions] = (
-                self._extract_preds_and_probs()
-            )
-            full_path = save_joblib(data=self, filepath=output_path, filename=filename)
-            self._restore_preds_and_probs(model_predictions=model_predictions)
+            # Extract large arrays to optimize disk write, then restore
+            preds_sidecar = self._extract_preds_and_probs()
+            full_path = save_joblib(self, output_dir, filename)
+            self._restore_preds_and_probs(preds_sidecar)
 
+        # --- EXCEL Export Logic ---
         if FileType.EXCEL in file_type:
-
-            # Define the "Table of Contents" for the Excel file
             sheets = [
-                # 1. High-level Metadata
                 ExcelSheetConfig(
-                    data=pd.DataFrame(list(meta_extract.items())),
-                    sheet_name="Audit Summary",
-                    header=False,
+                    pd.DataFrame(list(meta_flat.items())), "Audit Summary", header=False
                 ),
-                # 2. Performance Leaderboard
                 ExcelSheetConfig(
-                    data=pd.DataFrame(export_payload["results"]),
-                    sheet_name="Leaderboard",
+                    pd.DataFrame(export_payload["results"]), "Leaderboard"
                 ),
-                # 3. Anomalies (The "Smoking Gun")
-                ExcelSheetConfig(data=anomalies["data"], sheet_name="Anomaly Log"),
-                # 4. Technical Configuration
+                ExcelSheetConfig(pd.DataFrame(anomalies["data"]), "Anomaly Log"),
                 ExcelSheetConfig(
-                    data=pd.DataFrame(features),
-                    sheet_name="Features Used",
-                    index=True,
+                    pd.DataFrame(metadata["features"]).T, "Feature Metadata", index=True
                 ),
             ]
+            full_path = save_excel(sheets, output_dir, filename)
 
-            save_excel(data=sheets, filepath=output_path, filename=filename)
-
+        # --- PDF Export Logic ---
         if FileType.PDF in file_type:
-            from dsr_feature_eng_ml.evaluation.audit_pdf_renderer import (
-                AuditPDFRenderer,
-            )
-
             renderer = AuditPDFRenderer(summary=self, report_title=report_title)
             pdf_doc = renderer.render()
-            pdf_doc.save(filepath=output_path, filename=filename)
+            full_path = pdf_doc.save(output_dir=output_dir, filename=filename)
 
         return full_path
 
-    def evaluate_test_model(self, index: int, joblib_fullpath: Optional[Path]) -> None:
-        """Evaluate a single model on the test set and optionally persist state.
-
-        Args:
-            index: Index of the model configuration in results.
-            joblib_fullpath: Optional path to update the JOBLIB snapshot.
+    def evaluate_test_model(
+        self, index: int, joblib_fullpath: Path | None = None
+    ) -> None:
         """
+        Evaluate a single model on the test set and optionally persist state.
+
+        Parameters
+        ----------
+        index : int
+            Index of the model configuration in the results list.
+        joblib_fullpath : Path, optional
+            Path to update the .joblib snapshot immediately after evaluation.
+        """
+        if index >= len(self.results):
+            print(
+                f"Error: Index {index} is out of bounds for results (len={len(self.results)})"
+            )
+            return
+
         config = self.results[index]
-        print(f"Evaluating Test model {index}: {config.model_type.value}")
+        print(
+            f"Evaluating Test Set performance for {config.model_type.value} [ID: {config.id}]"
+        )
+
+        # 1. Hydrate the specific model architecture from its frozen config
         model = ModelSpecification.create_model_from_config(config)
 
-        if model is not None:
+        if model:
+            # 2. Run test evaluation and update the results entry
             self.results[index] = model.evaluate_test_set_performance(
                 data_splits=self.data_splits,
                 config=config,
                 features_to_fit_set=self.features_to_fit_set,
             )
 
-            if joblib_fullpath is not None:
+            # 3. Optional Persistence
+            if joblib_fullpath:
                 from dsr_files.enums import FileType
 
-                _ = self.export_results(
+                self.export_results(
                     prefix="Audit_State",
                     file_type=FileType.JOBLIB,
                     path=joblib_fullpath,
                     append_timestamp_to_save_path=False,
                     path_is_full_path=True,
                 )
-                print(f"JOBLIB file updated: {joblib_fullpath}")
+                print(f"Audit snapshot updated on disk: {joblib_fullpath.name}")
         else:
-            print(f"Unable to instantiate model for {config.model_type.name}")
+            print(
+                f"Warning: Unable to instantiate {config.model_type.name} specification."
+            )
 
     def evaluate_test_models(
-        self, indexes: List[int], joblib_fullpath: Optional[Path]
+        self, indexes: list[int], joblib_fullpath: Path | None = None
     ) -> None:
-        """Evaluate a list of model indexes on the test set.
+        """
+        Evaluate a specific list of model indices on the test set.
 
-        Args:
-            indexes: List of result indexes to evaluate.
-            joblib_fullpath: Optional path to update the JOBLIB snapshot.
+        Parameters
+        ----------
+        indexes : list[int]
+            List of result indices to process.
+        joblib_fullpath : Path, optional
+            Path to update the .joblib snapshot after each evaluation.
         """
         for index in indexes:
             self.evaluate_test_model(index=index, joblib_fullpath=joblib_fullpath)
 
-    def evaluate_all_test_models(self, joblib_fullpath: Optional[Path]) -> None:
-        """Evaluate all models in results on the test set.
-
-        Args:
-            joblib_fullpath: Optional path to update the JOBLIB snapshot.
+    def evaluate_all_test_models(self, joblib_fullpath: Path | None = None) -> None:
         """
-        self.evaluate_test_models(
-            indexes=list(range(len(self.results))), joblib_fullpath=joblib_fullpath
-        )
+        Evaluate every model in the results list on the test set.
+
+        Parameters
+        ----------
+        joblib_fullpath : Path, optional
+            Path to update the .joblib snapshot during the process.
+        """
+        # Iterate over all indices in the current results list
+        all_indices = list(range(len(self.results)))
+        self.evaluate_test_models(indexes=all_indices, joblib_fullpath=joblib_fullpath)

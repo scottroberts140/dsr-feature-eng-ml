@@ -1,95 +1,125 @@
 """Memory-aware helpers for tuning and resource checks."""
 
 from __future__ import annotations
-import psutil
+
+from typing import TYPE_CHECKING, Tuple
+
 import pandas as pd
-from typing import Tuple, TYPE_CHECKING
-from dsr_utils.formatting import DataScale
+import psutil
+from dsr_utils.formatting import (
+    BoolFormat,
+    BoolRepresentation,
+    DataScale,
+    IntegerFormat,
+    ValueDescFormat,
+    format_label_value_pairs,
+)
 
 if TYPE_CHECKING:
     from dsr_feature_eng_ml.models.model_specification import ModelSpecification
 
+import os
+
 
 def validate_n_jobs(value: int) -> int:
-    """Normalize n_jobs to a safe CPU count.
-
-    Args:
-        value: Requested number of jobs; -1 means all cores.
-
-    Returns:
-        A bounded job count between 1 and the available CPU count.
     """
-    import os
+    Normalize n_jobs to a safe, available CPU count.
 
-    n_jobs = 1
+    Parameters
+    ----------
+    value : int
+        The requested number of parallel jobs. A value of -1 indicates
+        that all available cores should be used.
+
+    Returns
+    -------
+    int
+        A validated job count, bounded between 1 and the system's
+        available CPU count.
+    """
     cpu_count = os.cpu_count() or 1
 
     if value == -1:
-        n_jobs = cpu_count
-    else:
-        n_jobs = min(value, cpu_count)
+        return cpu_count
 
-    return n_jobs
+    # Ensure we return at least 1 and never more than the physical max
+    return max(1, min(value, cpu_count))
 
 
 def check_memory_risk(
-    df: pd.DataFrame, model: ModelSpecification, n_jobs: int = -1
+    df: pd.DataFrame, model: "ModelSpecification", n_jobs: int = -1
 ) -> Tuple[bool, float, float, float]:
-    """Estimate memory risk for model tuning and print a summary.
-
-    Args:
-        df: Dataset used for training/tuning.
-        model: Model specification with tuning parameters.
-        n_jobs: Requested parallel workers (-1 for all cores).
-
-    Returns:
-        Tuple of (risk, estimated_peak_gb, available_gb, model_multiplier).
     """
-    from dsr_utils.formatting import (
-        BoolRepresentation,
-        IntegerFormat,
-        ValueDescFormat,
-        BoolFormat,
-        format_label_value_pairs,
-    )
-    from dsr_feature_eng_ml.preferences import prefs
+    Estimate system memory risk for model tuning and display a summary.
+
+    Calculates the potential peak memory usage by factoring in the dataset size,
+    model complexity (multiplier), and the degree of parallelism.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The training dataset.
+    model : ModelSpecification
+        The model instance containing tuning parameters and complexity multipliers.
+    n_jobs : int, default -1
+        The number of parallel workers requested.
+
+    Returns
+    -------
+    risk : bool
+        True if estimated peak exceeds 85% of available system memory.
+    estimated_peak_gb : float
+        The calculated maximum memory usage in bytes.
+    available_gb : float
+        The current available system memory in bytes.
+    model_multiplier : float
+        The complexity multiplier associated with the ModelType.
+    """
+    from dsr_feature_eng_ml.prefs_instance import prefs
 
     # 1. Setup environment
     available_gb = psutil.virtual_memory().available
     dataset_gb = df.memory_usage(deep=True).sum()
 
-    # 2. Get the comlexity multiplier
+    # 2. Get the complexity multiplier
     model_multiplier = model.model_type.tuning_multiplier
     concurrent_workers = validate_n_jobs(n_jobs)
 
-    # 3. Factor in Parallelism
+    # 3. Factor in Parallelism and candidate storage
     num_candidates = model.model_dials.num_candidates
+    # Storage overhead accounts for serialized models and CV results
     storage_overhead = (
         (model.total_fits * 0.15) + (num_candidates * 0.1)
     ) * DataScale.GB.get_size()
 
     # 4. Calculate Peak Estimated Need
-    # Peak = Base Data + (Data * Complexity * Parallelism factor)
-    # We use sqrt(jobs) because not all workers peak at the exact same millisecond
+    # Heuristic: Base Data + (Data * Complexity * Workers) + Overhead
     processing_spike = dataset_gb * model_multiplier * concurrent_workers
     estimated_peak_gb = dataset_gb + processing_spike + storage_overhead
+
     risk = estimated_peak_gb > (available_gb * 0.85)
+
+    # 5. Formatting and Reporting
     risk_format = BoolFormat(representation=BoolRepresentation.YES_NO)
     model_multiplier_format = ValueDescFormat(
         precision=1, description="x", description_leading_space=False
     )
     int_format = IntegerFormat()
+
     stats = [
         ("Available", prefs.gb_format.format_value(available_gb)),
         ("Dataset", prefs.gb_format.format_value(dataset_gb)),
-        ("Model multiplier", model_multiplier_format.format_value(model_multiplier)),
+        ("Model Multiplier", model_multiplier_format.format_value(model_multiplier)),
         ("n_jobs", int_format.format_value(n_jobs)),
-        ("Concurrent workers", int_format.format_value(concurrent_workers)),
-        ("Total fits", int_format.format_value(model.total_fits)),
+        ("Concurrent Workers", int_format.format_value(concurrent_workers)),
+        ("Total Fits", int_format.format_value(model.total_fits)),
         ("Candidates", int_format.format_value(num_candidates)),
-        ("Storage overhead", prefs.gb_format.format_value(storage_overhead)),
+        ("Storage Overhead", prefs.gb_format.format_value(storage_overhead)),
         ("Estimated Peak", prefs.gb_format.format_value(estimated_peak_gb)),
         ("Risk", risk_format.format_value(risk)),
     ]
+
+    print("\n--- Memory Risk Audit ---")
     print(format_label_value_pairs(stats))
+
     return risk, estimated_peak_gb, available_gb, model_multiplier

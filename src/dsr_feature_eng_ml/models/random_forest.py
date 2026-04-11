@@ -1,53 +1,70 @@
+"""Random forest model specification and parameter definitions."""
+
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Union, Optional, Literal, Mapping, Any, cast, get_args, Type
-from dsr_feature_eng_ml.enums import (
-    ModelType,
-    BalancingStrategy,
-    ScoringMetric,
-    TaskType,
-    OptimizationStrategy,
-)
-from dsr_feature_eng_ml.models.model_specification import (
-    ModelSpecification,
-    ModelParams,
-)
-from dsr_feature_eng_ml.evaluation.schema import DataSplits
-from dsr_feature_eng_ml.preferences import prefs
+from typing import Any, Literal, Mapping, Optional, Type, cast, get_args
+
 from dsr_utils import format_label_value_pairs
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
+from dsr_feature_eng_ml.enums import (
+    BalancingStrategy,
+    ModelType,
+    OptimizationStrategy,
+    ScoringMetric,
+    TaskType,
+)
+from dsr_feature_eng_ml.models.model_specification import (
+    ModelParams,
+    ModelSpecification,
+)
+from dsr_feature_eng_ml.prefs_instance import prefs
+
+# Literal types for scikit-learn constructor validation
 RFCriterion = Literal["gini", "entropy", "log_loss"]
 RFRCriterion = Literal["squared_error", "absolute_error", "friedman_mse", "poisson"]
 
 
 @dataclass(frozen=True)
 class RandomForestParams(ModelParams):
-    criterion: Union[RFCriterion, RFRCriterion] = "squared_error"
-    max_depth: Optional[int] = None
+    """
+    Hyperparameters for Random Forest models.
+
+    A random forest is a meta estimator that fits a number of decision tree
+    classifiers on various sub-samples of the dataset and uses averaging to
+    improve the predictive accuracy and control over-fitting.
+    """
+
+    criterion: str = "squared_error"
+    max_depth: int | None = None
     n_estimators: int = 100
-    min_samples_split: Union[int, float] = 2
-    min_samples_leaf: Union[int, float] = 1
-    max_features: Union[float, Literal["sqrt", "log2"]] = "sqrt"
-    random_state: Optional[int] = None
+    min_samples_split: int | float = 2
+    min_samples_leaf: int | float = 1
+    max_features: float | Literal["sqrt", "log2"] | None = "sqrt"
     bootstrap: bool = True
     task_type: TaskType = TaskType.CLASSIFICATION
     scoring: ScoringMetric = ScoringMetric.R2
 
     # For classification models only
-    class_weight: Optional[
-        Union[Mapping[Any, Any], Literal["balanced", "balanced_subsample"]]
-    ] = None
+    class_weight: (
+        Mapping[Any, Any] | Literal["balanced", "balanced_subsample"] | None
+    ) = None
 
     @classmethod
     def create_default(
-        cls, task_type: TaskType, scoring: ScoringMetric, random_state: int, **kwargs
+        cls,
+        task_type: TaskType,
+        scoring: ScoringMetric,
+        random_state: int,
+        **kwargs: Any,
     ) -> RandomForestParams:
+        """Create a parameter instance with task-appropriate defaults."""
         if task_type == TaskType.REGRESSION:
             defaults = {
                 "task_type": task_type,
                 "criterion": "squared_error",
-                "max_features": 1.0,  # Often better for regression
+                "max_features": 1.0,  # Typically better for regression
                 "random_state": random_state,
                 "scoring": scoring,
                 **kwargs,
@@ -63,8 +80,8 @@ class RandomForestParams(ModelParams):
             }
         return cls(**defaults)
 
-    def __post_init__(self):
-        """Validates that the criterion matches the task type."""
+    def __post_init__(self) -> None:
+        """Validate that the criterion matches the task type."""
         if self.task_type == TaskType.CLASSIFICATION:
             if self.criterion not in get_args(RFCriterion):
                 raise ValueError(
@@ -79,6 +96,7 @@ class RandomForestParams(ModelParams):
                 )
 
     def info(self) -> str:
+        """Return a formatted summary of Random Forest parameters."""
         data = [
             ("Depth", f"{self.max_depth}"),
             ("Estimators", f"{self.n_estimators}"),
@@ -87,70 +105,98 @@ class RandomForestParams(ModelParams):
             ("Max Features", f"{self.max_features}"),
             ("Bootstrap", f"{self.bootstrap}"),
             ("Weight", f"{self.class_weight}"),
-            ("Task Type", f"{self.task_type}"),
         ]
         return format_label_value_pairs(data)
 
     @staticmethod
-    def get_standard_search_grid(narrow: bool = True) -> dict[str, list]:
-        """Generate a standard hyperparameter search grid for Random Forest.
+    def get_standard_search_grid(
+        narrow: bool = True, task_type: TaskType = TaskType.CLASSIFICATION
+    ) -> dict[str, list[Any]]:
+        """
+        Generate a standard search grid for Random Forest tuning.
 
-        Provides a compact grid for quick tuning or a broader grid that explores
-        depth, leaf/split thresholds, feature sampling, and bootstrapping.
-
-        Args:
-            narrow (bool, optional): If True (default), returns a compact grid
-                focused on core parameters. If False, returns an expanded grid.
-
-        Returns:
-            dict[str, list]: Parameter grid with keys mapping to candidate values.
-                - narrow=True: n_estimators, max_depth, max_features,
-                  min_samples_leaf, bootstrap
-                - narrow=False: Adds min_samples_split, criterion,
-                  max_samples, and broader ranges.
-
-        Example:
-            >>> narrow_grid = RandomForestParams.get_standard_search_grid()
-            >>> expanded_grid = RandomForestParams.get_standard_search_grid(narrow=False)
+        Parameters
+        ----------
+        narrow : bool, default True
+            If True, returns core parameters. If False, adds split thresholds,
+            bootstrap toggles, and criteria.
+        task_type : TaskType, default TaskType.CLASSIFICATION
+            Determines which criteria are included in the grid.
         """
         if narrow:
-            grid = {
+            return {
                 "n_estimators": [100, 200, 500],
                 "max_depth": [None, 10, 20],
                 "max_features": ["sqrt", "log2"],
                 "min_samples_leaf": [1, 2, 4],
                 "bootstrap": [True],
             }
+
+        grid = {
+            "n_estimators": [100, 200, 500, 1000],
+            "max_depth": [None, 10, 20, 30, 50],
+            "min_samples_split": [2, 5, 10],
+            "min_samples_leaf": [1, 2, 4, 10],
+            "max_features": ["sqrt", "log2", None, 0.5],
+            "bootstrap": [True, False],
+        }
+
+        if task_type == TaskType.CLASSIFICATION:
+            grid["criterion"] = ["gini", "entropy"]
         else:
-            grid = {
-                "n_estimators": [100, 200, 500, 1000],
-                "max_depth": [None, 10, 20, 30, 50],
-                "min_samples_split": [2, 5, 10],
-                "min_samples_leaf": [1, 2, 4, 10],
-                "max_features": ["sqrt", "log2", None, 0.5],
-                "criterion": ["gini", "entropy"],
-                "bootstrap": [True, False],
-                "max_samples": [0.5, 0.7, 0.9, None],  # Only used if bootstrap=True
-            }
+            grid["criterion"] = ["squared_error", "friedman_mse"]
 
         return grid
 
 
 class RandomForest(
     ModelSpecification[
-        RandomForestParams, Union[RandomForestClassifier, RandomForestRegressor]
+        RandomForestParams, RandomForestClassifier | RandomForestRegressor
     ]
 ):
-    """Random forest model specification for regression/classification."""
-
-    def get_estimator_class(
-        self,
-    ) -> Type[Union[RandomForestClassifier, RandomForestRegressor]]:
-        if self.task_type == TaskType.CLASSIFICATION:
-            return RandomForestClassifier
-        return RandomForestRegressor
+    """Random forest specification for regression and classification."""
 
     params_class = RandomForestParams
+
+    def __init__(
+        self,
+        cv: int | None,
+        balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
+        params: Optional[RandomForestParams] = None,
+        task_type: TaskType = TaskType.CLASSIFICATION,
+        scoring: ScoringMetric = ScoringMetric.R2,
+        n_jobs: int = 3,
+        n_iter: int = -1,
+        acceptable_gap: float = prefs.acceptable_gap,
+        large_gap: float = prefs.large_gap,
+        optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
+    ):
+        """Initialize the Random Forest model specification."""
+        if params is None:
+            params = RandomForestParams.create_default(
+                task_type=task_type, scoring=scoring, random_state=1
+            )
+
+        self._model_dials = params
+        self._task_type = self.model_dials.task_type
+        self._scoring = self.model_dials.scoring
+
+        super().__init__(
+            cv=cv,
+            balancing_strategy=balancing_strategy,
+            n_jobs=n_jobs,
+            n_iter=n_iter,
+            acceptable_gap=acceptable_gap,
+            large_gap=large_gap,
+            optimization_strategy=optimization_strategy,
+        )
+
+        self._model_type = (
+            ModelType.RANDOM_FOREST_CLASSIFIER
+            if self.task_type == TaskType.CLASSIFICATION
+            else ModelType.RANDOM_FOREST_REGRESSOR
+        )
+        self.estimator = self.create_estimator()
 
     @property
     def task_type(self) -> TaskType:
@@ -165,7 +211,7 @@ class RandomForest(
         return self._scoring
 
     @scoring.setter
-    def scoring(self, value: ScoringMetric):
+    def scoring(self, value: ScoringMetric) -> None:
         self._scoring = value
 
     @property
@@ -176,88 +222,42 @@ class RandomForest(
     def model_dials(self, value: RandomForestParams) -> None:
         self._model_dials = value
 
-    def __init__(
+    def get_estimator_class(
         self,
-        cv: Optional[int],
-        balancing_strategy: BalancingStrategy,
-        params: Optional[RandomForestParams] = None,
-        task_type: TaskType = TaskType.CLASSIFICATION,
-        scoring: ScoringMetric = ScoringMetric.R2,
-        n_jobs: int = 3,
-        n_iter: int = -1,
-        acceptable_gap: float = prefs.acceptable_gap,
-        large_gap: float = prefs.large_gap,
-        optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
-    ):
-        # Use provided params or fall back to defaults
-        # We ensure the data's random_state is used if not specified in params
-        if params is None:
-            params = RandomForestParams.create_default(
-                task_type=task_type,
-                scoring=scoring,
-                random_state=1,
-            )
-
-        self._model_dials = params
-        self._task_type = self.model_dials.task_type
-        self._scoring = self.model_dials.scoring
-
-        super().__init__(
-            cv=cv,
-            balancing_strategy=balancing_strategy,
-            n_jobs=n_jobs,
-            n_iter=n_iter,
-            acceptable_gap=acceptable_gap,
-            large_gap=large_gap,
+    ) -> Type[RandomForestClassifier | RandomForestRegressor]:
+        """Return the Scikit-Learn Random Forest class for the current task."""
+        return (
+            RandomForestClassifier
+            if self.task_type == TaskType.CLASSIFICATION
+            else RandomForestRegressor
         )
-
-        if task_type == TaskType.CLASSIFICATION:
-            self._model_type = ModelType.RANDOM_FOREST_CLASSIFIER
-        else:
-            self._model_type = ModelType.RANDOM_FOREST_REGRESSOR
-
-        self.optimization_strategy = optimization_strategy
-        self.estimator = self.create_estimator()
 
     def create_estimator(
         self, parameters: Optional[RandomForestParams] = None
-    ) -> Union[RandomForestClassifier, RandomForestRegressor]:
-        # Use the provided parameters if they exist, otherwise use the instance dials
-        params = parameters or self.model_dials
+    ) -> RandomForestClassifier | RandomForestRegressor:
+        """Instantiate a raw Scikit-Learn Random Forest estimator."""
+        p = parameters or self.model_dials
 
-        common_params = {
-            "n_estimators": params.n_estimators,
-            "max_depth": params.max_depth,
-            "min_samples_split": params.min_samples_split,
-            "min_samples_leaf": params.min_samples_leaf,
-            "max_features": params.max_features,
-            "random_state": params.random_state,
-            "bootstrap": params.bootstrap,
+        common = {
+            "n_estimators": p.n_estimators,
+            "max_depth": p.max_depth,
+            "min_samples_split": p.min_samples_split,
+            "min_samples_leaf": p.min_samples_leaf,
+            "max_features": p.max_features,
+            "random_state": p.random_state,
+            "bootstrap": p.bootstrap,
             "n_jobs": self.n_jobs,
         }
 
         if self.task_type == TaskType.REGRESSION:
-            # Ensure a valid regression criterion is used
-            # Default to squared_error if the params still have 'gini' from a copy-paste
-            raw_crit = (
-                params.criterion
-                if params.criterion in get_args(RFRCriterion)
+            crit = (
+                p.criterion
+                if p.criterion in get_args(RFRCriterion)
                 else "squared_error"
             )
+            return RandomForestRegressor(criterion=cast(RFRCriterion, crit), **common)
 
-            crit = cast(RFRCriterion, raw_crit)
-
-            return RandomForestRegressor(criterion=crit, **common_params)
-        else:
-            # Logic for Classification
-            raw_crit = (
-                params.criterion
-                if params.criterion in get_args(RFCriterion)
-                else "gini"
-            )
-
-            crit = cast(RFCriterion, raw_crit)
-
-            return RandomForestClassifier(
-                criterion=crit, class_weight=params.class_weight, **common_params
-            )
+        crit = p.criterion if p.criterion in get_args(RFCriterion) else "gini"
+        return RandomForestClassifier(
+            criterion=cast(RFCriterion, crit), class_weight=p.class_weight, **common
+        )

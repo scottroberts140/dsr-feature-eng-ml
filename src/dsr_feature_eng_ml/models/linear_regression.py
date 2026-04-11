@@ -1,23 +1,26 @@
 """Linear regression model specification and parameter definitions."""
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Type
-from dsr_feature_eng_ml.enums import (
-    ModelType,
-    BalancingStrategy,
-    ScoringMetric,
-    TaskType,
-    OptimizationStrategy,
-)
-from dsr_feature_eng_ml.models.model_specification import (
-    ModelSpecification,
-    ModelParams,
-)
-from dsr_feature_eng_ml.evaluation.schema import DataSplits
-from dsr_feature_eng_ml.preferences import prefs
+
 from dsr_utils import format_label_value_pairs
 from sklearn.linear_model import LinearRegression as SklearnLinearRegression
+
+from dsr_feature_eng_ml.enums import (
+    BalancingStrategy,
+    ModelType,
+    OptimizationStrategy,
+    ScoringMetric,
+    TaskType,
+)
+from dsr_feature_eng_ml.evaluation.schema import DataSplits
+from dsr_feature_eng_ml.models.model_specification import (
+    ModelParams,
+    ModelSpecification,
+)
+from dsr_feature_eng_ml.prefs_instance import prefs
 
 
 @dataclass(frozen=True)

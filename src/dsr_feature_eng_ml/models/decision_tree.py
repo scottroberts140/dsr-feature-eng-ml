@@ -1,114 +1,96 @@
 """Decision tree model specification and parameter definitions."""
 
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import (
-    Union,
-    Optional,
-    Literal,
-    get_args,
-    cast,
-    TYPE_CHECKING,
-    Callable,
-    Type,
-)
+from typing import TYPE_CHECKING, Any, Literal, Optional, Type, cast, get_args
+
+from dsr_utils import format_label_value_pairs
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+
 from dsr_feature_eng_ml.enums import (
-    ModelType,
     BalancingStrategy,
+    ModelType,
+    OptimizationStrategy,
     ScoringMetric,
     TaskType,
-    OptimizationStrategy,
 )
 from dsr_feature_eng_ml.models.model_specification import (
-    ModelSpecification,
     ModelParams,
+    ModelSpecification,
 )
-from dsr_feature_eng_ml.evaluation.schema import DataSplits
-from dsr_feature_eng_ml.preferences import prefs
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from dsr_utils import format_label_value_pairs
+from dsr_feature_eng_ml.prefs_instance import prefs
 
 if TYPE_CHECKING:
     from dsr_feature_eng_ml.models.model_specification import (
-        ScikitModel,
         ProbabilisticClassifier,
+        ScikitModel,
     )
 
 # Decision Tree Specific Literals
 DTCriterion = Literal["gini", "entropy", "log_loss"]
 DTRCriterion = Literal["squared_error", "friedman_mse", "absolute_error", "poisson"]
 
-TreeEstimator = Union[DecisionTreeClassifier, DecisionTreeRegressor]
-TreeClass = Union[Type[DecisionTreeClassifier], Type[DecisionTreeRegressor]]
-
 
 @dataclass(frozen=True)
 class DecisionTreeParams(ModelParams):
-    """Hyperparameters for decision tree models."""
+    """
+    Hyperparameters for decision tree models.
+    """
 
-    criterion: Literal[
-        "gini",
-        "entropy",
-        "log_loss",
-        "squared_error",
-        "friedman_mse",
-        "absolute_error",
-        "poisson",
-    ] = "gini"
+    criterion: str = "gini"
     splitter: Literal["best", "random"] = "best"
     max_depth: Optional[int] = None
-    min_samples_split: Union[int, float] = 2
-    min_samples_leaf: Union[int, float] = 1
+    min_samples_split: int | float = 2
+    min_samples_leaf: int | float = 1
     min_weight_fraction_leaf: float = 0.0
-    max_features: Optional[Union[int, float, Literal["sqrt", "log2"]]] = None
-    random_state: Optional[int] = None
+    max_features: int | float | Literal["sqrt", "log2"] | None = None
     max_leaf_nodes: Optional[int] = None
     min_impurity_decrease: float = 0.0
-    class_weight: Optional[Union[dict[str, float], str]] = None
+    class_weight: dict[str, float] | str | None = None
     ccp_alpha: float = 0.0
     task_type: TaskType = TaskType.CLASSIFICATION
     scoring: ScoringMetric = ScoringMetric.F1
 
     @classmethod
     def create_default(
-        cls, task_type: TaskType, scoring: ScoringMetric, random_state: int, **kwargs
-    ) -> "DecisionTreeParams":
+        cls,
+        task_type: TaskType,
+        scoring: ScoringMetric,
+        random_state: int,
+        **kwargs: Any,
+    ) -> DecisionTreeParams:
+        """Create a parameter instance with task-appropriate defaults."""
         if task_type == TaskType.REGRESSION:
             defaults = {
                 "task_type": task_type,
-                "criterion": "squared_error",  # Regression specific
-                "max_features": None,  # Default for DecisionTreeRegressor
+                "criterion": "squared_error",
                 "random_state": random_state,
-                "class_weight": None,  # Not applicable to regression
                 "scoring": scoring,
                 **kwargs,
             }
         else:
             defaults = {
                 "task_type": task_type,
-                "criterion": "gini",  # Classification specific
-                "max_features": None,  # Scikit-learn default is None (all)
+                "criterion": "gini",
                 "random_state": random_state,
                 "scoring": scoring,
                 **kwargs,
             }
         return cls(**defaults)
 
-    def __post_init__(self):
-        """Validates that the criterion matches the task type."""
+    def __post_init__(self) -> None:
+        """Validate that the criterion matches the task type."""
         if self.task_type == TaskType.CLASSIFICATION:
             if self.criterion not in get_args(DTCriterion):
                 raise ValueError(
-                    f"Invalid criterion '{self.criterion}' for Classification. "
-                    f"Expected one of {get_args(DTCriterion)}"
+                    f"Invalid criterion '{self.criterion}' for Classification."
                 )
         else:
             if self.criterion not in get_args(DTRCriterion):
                 raise ValueError(
-                    f"Invalid criterion '{self.criterion}' for Regression. "
-                    f"Expected one of {get_args(DTRCriterion)}"
+                    f"Invalid criterion '{self.criterion}' for Regression."
                 )
-
             if self.class_weight is not None:
                 raise ValueError("class_weight must be None for Regression tasks.")
 
@@ -120,70 +102,77 @@ class DecisionTreeParams(ModelParams):
             ("Criterion", f"{self.criterion}"),
             ("Max Features", f"{self.max_features}"),
             ("Weight", f"{self.class_weight}"),
-            ("Task Type", f"{self.task_type}"),
-            ("Scoring", f"{self.scoring}"),
         ]
         return format_label_value_pairs(data)
 
     @staticmethod
-    def get_standard_search_grid(narrow: bool = True) -> dict[str, list]:
-        """Generate a standard hyperparameter search grid for DecisionTree.
-
-        Provides predefined parameter combinations for hyperparameter tuning.
-        The "narrow" mode focuses on core tree depth and leaf size levers,
-        while the expanded mode includes additional fine-tuning parameters.
-
-        Args:
-            narrow (bool, optional): If True (default), returns core parameters
-                (max_depth, min_samples_leaf). If False, includes additional
-                parameters (min_samples_split, criterion, class_weight).
-
-        Returns:
-            dict[str, list]: Parameter grid with keys mapping to lists of values.
-                - narrow=True: max_depth [None, 5, 10, 15, 20],
-                              min_samples_leaf [1, 2, 5, 10]
-                - narrow=False: Above plus min_samples_split [2, 5, 10],
-                               criterion ["gini", "entropy"],
-                               class_weight [None, "balanced"]
-
-        Example:
-            >>> narrow_grid = DecisionTreeParams.get_standard_search_grid()
-            >>> expanded_grid = DecisionTreeParams.get_standard_search_grid(narrow=False)
-        """
-        # The "Core" levers always included
-        grid = {
+    def get_standard_search_grid(
+        narrow: bool = True, task_type: TaskType = TaskType.CLASSIFICATION
+    ) -> dict[str, list[Any]]:
+        """Generate standard search space for tuning."""
+        grid: dict[str, list[Any]] = {
             "max_depth": [None, 5, 10, 15, 20],
             "min_samples_leaf": [1, 2, 5, 10],
         }
 
         if not narrow:
-            # Add the fine-tuning levers
-            grid.update(
-                {
-                    "min_samples_split": [2, 5, 10],
-                    "criterion": ["gini", "entropy"],
-                    "class_weight": [None, "balanced"],
-                }
-            )
+            grid["min_samples_split"] = [2, 5, 10]
+            if task_type == TaskType.CLASSIFICATION:
+                grid["criterion"] = ["gini", "entropy"]
+                grid["class_weight"] = [None, "balanced"]
+            else:
+                grid["criterion"] = ["squared_error", "friedman_mse"]
 
         return grid
 
 
 class DecisionTree(
     ModelSpecification[
-        DecisionTreeParams, Union[DecisionTreeClassifier, DecisionTreeRegressor]
+        DecisionTreeParams, DecisionTreeClassifier | DecisionTreeRegressor
     ]
 ):
-    """Decision tree model specification for regression/classification."""
-
-    def get_estimator_class(
-        self,
-    ) -> Type[Union[DecisionTreeClassifier, DecisionTreeRegressor]]:
-        if self.task_type == TaskType.CLASSIFICATION:
-            return DecisionTreeClassifier
-        return DecisionTreeRegressor
+    """Decision tree specification for classification and regression tasks."""
 
     params_class = DecisionTreeParams
+
+    def __init__(
+        self,
+        cv: Optional[int],
+        balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
+        params: Optional[DecisionTreeParams] = None,
+        task_type: TaskType = TaskType.CLASSIFICATION,
+        n_jobs: int = 3,
+        n_iter: int = -1,
+        acceptable_gap: float = prefs.acceptable_gap,
+        large_gap: float = prefs.large_gap,
+        scoring: ScoringMetric = ScoringMetric.F1,
+        optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
+    ):
+        if params is None:
+            params = DecisionTreeParams.create_default(
+                task_type=task_type, scoring=scoring, random_state=1
+            )
+
+        self._model_dials = params
+        self._task_type = self.model_dials.task_type
+        self._scoring = self.model_dials.scoring
+
+        super().__init__(
+            cv=cv,
+            balancing_strategy=balancing_strategy,
+            n_jobs=n_jobs,
+            n_iter=n_iter,
+            acceptable_gap=acceptable_gap,
+            large_gap=large_gap,
+            optimization_strategy=optimization_strategy,
+        )
+
+        self._model_type = (
+            ModelType.DECISION_TREE_CLASSIFIER
+            if self.task_type == TaskType.CLASSIFICATION
+            else ModelType.DECISION_TREE_REGRESSOR
+        )
+        self.estimator = self.create_estimator()
 
     @property
     def task_type(self) -> TaskType:
@@ -194,7 +183,7 @@ class DecisionTree(
         return self._scoring
 
     @scoring.setter
-    def scoring(self, value: ScoringMetric):
+    def scoring(self, value: ScoringMetric) -> None:
         self._scoring = value
 
     @property
@@ -209,89 +198,42 @@ class DecisionTree(
     def model_dials(self, value: DecisionTreeParams) -> None:
         self._model_dials = value
 
-    def __init__(
+    def get_estimator_class(
         self,
-        cv: Optional[int],
-        balancing_strategy: BalancingStrategy,
-        params: Optional[DecisionTreeParams] = None,
-        task_type: TaskType = TaskType.CLASSIFICATION,
-        n_jobs: int = 3,
-        n_iter: int = -1,
-        acceptable_gap: float = prefs.acceptable_gap,
-        large_gap: float = prefs.large_gap,
-        scoring: ScoringMetric = ScoringMetric.F1,
-        optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
-    ):
-        # Use provided params or fall back to defaults
-        # We ensure the data's random_state is used if not specified in params
-        if params is None:
-            params = DecisionTreeParams.create_default(
-                task_type=task_type,
-                scoring=scoring,
-                random_state=1,
-            )
-
-        self._model_dials = params
-        self._task_type = self.model_dials.task_type
-        self._scoring = self.model_dials.scoring
-
-        super().__init__(
-            cv=cv,
-            balancing_strategy=balancing_strategy,
-            n_jobs=n_jobs,
-            n_iter=n_iter,
-            acceptable_gap=acceptable_gap,
-            large_gap=large_gap,
+    ) -> Type[DecisionTreeClassifier | DecisionTreeRegressor]:
+        return (
+            DecisionTreeClassifier
+            if self.task_type == TaskType.CLASSIFICATION
+            else DecisionTreeRegressor
         )
-
-        if self.task_type == TaskType.CLASSIFICATION:
-            self._model_type = ModelType.DECISION_TREE_CLASSIFIER
-        else:
-            self._model_type = ModelType.DECISION_TREE_REGRESSOR
-
-        self.optimization_strategy = optimization_strategy
-        self.estimator = self.create_estimator()
 
     def create_estimator(
         self, parameters: Optional[DecisionTreeParams] = None
-    ) -> Union[DecisionTreeClassifier, DecisionTreeRegressor]:
-        # Use the provided parameters if they exist, otherwise use the instance dials
-        params = parameters or self.model_dials
+    ) -> DecisionTreeClassifier | DecisionTreeRegressor:
+        p = parameters or self.model_dials
 
-        # Common parameters shared by both Regressor and Classifier
-        # Note: DecisionTree does NOT have n_jobs
-        common_params = {
-            "splitter": params.splitter,
-            "max_depth": params.max_depth,
-            "min_samples_split": params.min_samples_split,
-            "min_samples_leaf": params.min_samples_leaf,
-            "min_weight_fraction_leaf": params.min_weight_fraction_leaf,
-            "max_features": params.max_features,
-            "random_state": params.random_state,
-            "max_leaf_nodes": params.max_leaf_nodes,
-            "min_impurity_decrease": params.min_impurity_decrease,
-            "ccp_alpha": params.ccp_alpha,
+        common = {
+            "splitter": p.splitter,
+            "max_depth": p.max_depth,
+            "min_samples_split": p.min_samples_split,
+            "min_samples_leaf": p.min_samples_leaf,
+            "min_weight_fraction_leaf": p.min_weight_fraction_leaf,
+            "max_features": p.max_features,
+            "random_state": p.random_state,
+            "max_leaf_nodes": p.max_leaf_nodes,
+            "min_impurity_decrease": p.min_impurity_decrease,
+            "ccp_alpha": p.ccp_alpha,
         }
 
         if self.task_type == TaskType.REGRESSION:
-            # Fallback logic for Regression Criterion
-            raw_crit = (
-                params.criterion
-                if params.criterion in get_args(DTRCriterion)
+            crit = (
+                p.criterion
+                if p.criterion in get_args(DTRCriterion)
                 else "squared_error"
             )
-            crit = cast(DTRCriterion, raw_crit)
+            return DecisionTreeRegressor(criterion=cast(DTRCriterion, crit), **common)
 
-            return DecisionTreeRegressor(criterion=crit, **common_params)
-        else:
-            # Fallback logic for Classification Criterion
-            raw_crit = (
-                params.criterion
-                if params.criterion in get_args(DTCriterion)
-                else "gini"
-            )
-            crit = cast(DTCriterion, raw_crit)
-
-            return DecisionTreeClassifier(
-                criterion=crit, class_weight=params.class_weight, **common_params
-            )
+        crit = p.criterion if p.criterion in get_args(DTCriterion) else "gini"
+        return DecisionTreeClassifier(
+            criterion=cast(DTCriterion, crit), class_weight=p.class_weight, **common
+        )

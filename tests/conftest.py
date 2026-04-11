@@ -1,9 +1,24 @@
-"""
-Pytest configuration and fixtures for dsr-feature-eng-ml tests.
-"""
-import sys
 from pathlib import Path
 
-# Add src directory to path
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
+import pytest
+from dsr_files.parquet_handler import load_parquet
+
+from dsr_feature_eng_ml.enums import BalancingStrategy, ScoringMetric, TaskType
+
+
+@pytest.fixture
+def mini_taxi_df():
+    """Load the 1000-row test sample for audit verification."""
+    data_path = Path(__file__).parent / "data" / "YellowTaxi_202510.parquet"
+    return load_parquet(data_path)
+
+
+@pytest.fixture
+def regression_config():
+    """Standard audit configuration for regression tasks."""
+    return {
+        "cv": 5,
+        "balancing_strategy": BalancingStrategy.NONE,
+        "task_type": TaskType.REGRESSION,
+        "scoring": ScoringMetric.R2,
+    }

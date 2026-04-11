@@ -7,15 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-11
+
+### Added
+
+* **ModelAuditor Orchestrator**: introduced a centralized audit manager to handle model lifecycles, including tuning, final fitting, and automated report generation.
+* **Positional Feature Alignment**: Added a deterministic sorting mechanism in `ModelFeatureImportance` using the `position` attribute to ensure feature names correctly map to importance arrays in unordered sets.
+* **Audit Trace Logging**: Implemented `AuditLogger` to provide a "black box" recording of all terminal outputs (warnings, memory alerts, and fit status) into persistent log files.
+* **Automated Model Viability Pruning**: Added logic to the orchestrator to automatically remove underperforming models from the competitive sweep based on a configurable `viable_score_gap`.
+
+### Changed
+
+* **Exact Upsampling/Downsampling**: Refactored `DataSplits` resampling strategies to use explicit row counts (`n=len(feat_min)`) instead of integer factors, ensuring perfectly balanced classes where `counts[0] == counts[1]`.
+* **Memory-Safe Serialization**: Optimized `ModelAuditSummary` with a "side-car" extraction strategy for large prediction arrays during `JOBLIB` exports to prevent system OOM errors.
+* **Enhanced Quality Scoring**: Updated `ModelConfigurationStats` to penalize the `quality_score` if models show extreme sensitivity to outliers (calculated via the gap between cleaned and raw validation scores).
+
+### Fixed
+
+* **Empty DataFrame Errors**: Corrected a failure where the `ModelAuditor` would attempt to fit models with zero columns by ensuring `FeatureMetadata` is properly propagated through the `ModelAuditorConfig`.
+* **PDF Rendering Stability**: Resolved a `ValueError` in the `AuditPDFRenderer` by enforcing strict index and length alignment between validation targets and model predictions during residual analysis plotting.
+* **Frozen Instance Errors**: Fixed immutability issues in `ModelConfiguration` tests by utilizing `dataclasses.replace` for injecting test-specific feature importance data.
+
+### Technical Notes
+
+* **Hardware Context**: Successfully verified peak RAM tracking and multi-core job propagation (`n_jobs`) across all model specifications.
+* **Regression Integrity**: Confirmed that linear models correctly utilize absolute coefficients (`coef_`) for relative importance reporting in the deep-dive audit pages.
+
 ## [1.1.0] - 2026-02-10
 
 ### Documentation
-- Documented new defaults for `FeatureMetadata.from_df` parameters `formatters` and `format_exceptions`.
+
+* Documented new defaults for `FeatureMetadata.from_df` parameters `formatters` and `format_exceptions`.
 
 ## [1.0.0] - 2026-02-08
 
 ### Breaking
-- Version reset to 1.0.0 to reflect non-backward-compatible changes across the library.
+
+* Version reset to 1.0.0 to reflect non-backward-compatible changes across the library.
 
 ### Documentation
-- Expanded module, class, and method docstrings across evaluation, models, and utilities.
+
+* Expanded module, class, and method docstrings across evaluation, models, and utilities.

@@ -1,49 +1,41 @@
 """Base model specification and shared training utilities."""
 
 from __future__ import annotations
-from abc import ABC, abstractmethod
+
 import dataclasses
-from dataclasses import dataclass, field
-import pandas as pd
-import numpy as np
-import psutil
+import enum
 import os
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import (
-    Union,
-    Optional,
-    cast,
-    Mapping,
-    Type,
-    Any,
-    Final,
-    TypeVar,
-    Protocol,
-    Generic,
-    runtime_checkable,
-    Callable,
-    Tuple,
     TYPE_CHECKING,
-    Literal,
+    Any,
+    Generic,
+    Mapping,
+    Optional,
+    Protocol,
     Self,
+    Tuple,
+    Type,
     TypeGuard,
-)
-from dsr_utils.formatting import (
-    BoolRepresentation,
-    PercentageFormat,
-    IntegerFormat,
-    EnumFormat,
-    BoolFormat,
+    TypeVar,
+    cast,
+    runtime_checkable,
 )
 
+import numpy as np
+import pandas as pd
+import psutil
+from dsr_utils.formatting import EnumFormat
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
 from dsr_feature_eng_ml.enums import (
-    ModelType,
     BalancingStrategy,
+    ModelType,
     OptimizationStrategy,
-    TaskType,
     ScoringMetric,
+    TaskType,
 )
 
 if TYPE_CHECKING:
@@ -54,62 +46,167 @@ if TYPE_CHECKING:
         FeatureMetadata,
     )
 
-from dsr_feature_eng_ml.preferences import prefs
-from dsr_feature_eng_ml.utils.generalization import calculate_generalization_status
-
-from sklearn.metrics import (
-    recall_score,
-    precision_score,
-    f1_score,
-    confusion_matrix,
-    mean_absolute_error,
-    mean_squared_error,
-    r2_score,
-    precision_recall_curve,
-)
+from dsr_feature_eng_ml.prefs_instance import prefs
 
 
 @runtime_checkable
 class ScikitModel(Protocol):
-    """Protocol for scikit-learn compatible estimators.
+    """
+    Protocol defining the minimal interface for scikit-learn compatible estimators.
 
-    Defines the minimal interface required for a scikit-learn estimator:
-    fit() for training and predict() for inference. Used for type hints
-    when working with generic sklearn models.
-
-    Methods:
-        fit: Train the model on data (X, y).
-        predict: Generate predictions from input X.
+    This protocol ensures that any object passed to the Auditor or ModelSpecification
+    supports the fundamental fit/predict/params API required for machine learning
+    workflows.
     """
 
-    def fit(self, X: Any, y: Any, sample_weight: Any = None) -> Self: ...
-    def predict(self, X: Any) -> Any: ...
-    def get_params(self, deep: bool = True) -> Mapping[str, Any]: ...
+    def fit(self, X: Any, y: Any, sample_weight: Any = None) -> Self:
+        """
+        Train the model on the provided data.
+
+        Parameters
+        ----------
+        X : Any
+            The input features (array-like, DataFrame, or sparse matrix).
+        y : Any
+            The target labels or values.
+        sample_weight : Any, optional
+            Individual weights for each training sample.
+
+        Returns
+        -------
+        Self
+            The fitted estimator instance.
+        """
+        ...
+
+    def predict(self, X: Any) -> Any:
+        """
+        Generate predictions for the input samples.
+
+        Parameters
+        ----------
+        X : Any
+            The input features to predict.
+
+        Returns
+        -------
+        Any
+            Predicted values or class labels.
+        """
+        ...
+
+    def get_params(self, deep: bool = True) -> Mapping[str, Any]:
+        """
+        Get parameters for this estimator.
+
+        Parameters
+        ----------
+        deep : bool, default True
+            If True, will return the parameters for this estimator and
+            contained subobjects that are estimators.
+
+        Returns
+        -------
+        Mapping[str, Any]
+            Parameter names mapped to their values.
+        """
+        ...
 
 
 @runtime_checkable
 class ProbabilisticClassifier(ScikitModel, Protocol):
+    """
+    Protocol for classifiers that support probability estimation.
+
+    Extends ScikitModel to include the predict_proba method, required for
+    metrics like ROC-AUC and Log Loss.
+    """
+
     def predict_proba(self, X: Any) -> np.ndarray:
-        """Predict class probabilities."""
+        """
+        Predict class probabilities for X.
+
+        Parameters
+        ----------
+        X : Any
+            The input features.
+
+        Returns
+        -------
+        np.ndarray
+            The class probabilities of the input samples.
+        """
         ...
 
 
+# T_Params ensures that hyperparameter containers are subclasses of ModelParams
 T_Params = TypeVar("T_Params", bound="ModelParams")
+
+# T_Estimator ensures that the internal model instance satisfies the ScikitModel Protocol
 T_Estimator = TypeVar("T_Estimator", bound="ScikitModel")
+
+
+def calculate_search_iterations(
+    grid: dict[str, Any],
+    min_iter: int = -1,
+    max_iter: int = 100,
+    coverage: float = 0.10,
+) -> int:
+    """
+    Calculate n_iter based on a percentage of the total search space.
+
+    Parameters
+    ----------
+    grid : dict
+        The hyperparameter grid or distribution dictionary.
+    min_iter : int, default -1
+        The absolute minimum iterations allowed.
+    max_iter : int, default 100
+        The absolute maximum iterations allowed.
+    coverage : float, default 0.10
+        The target percentage of the search space to cover.
+
+    Returns
+    -------
+    int
+        The suggested number of iterations for a RandomSearch.
+    """
+    import math
+
+    # 1. Calculate the total size of the grid
+    total_combinations = 1
+    for values in grid.values():
+        # If it's a distribution (SciPy rvs), it has infinite size.
+        if hasattr(values, "rvs"):
+            total_combinations = int(max_iter / coverage)
+            break
+
+        if isinstance(values, (list, tuple)):
+            total_combinations *= len(values)
+
+    # 2. Apply coverage
+    calculated_iter = int(math.ceil(total_combinations * coverage))
+
+    # 3. Ensure a floor for small grids and cap at max_iter
+    actual_iter = max(calculated_iter, min(total_combinations, 5))
+    return max(min_iter, min(actual_iter, max_iter))
 
 
 @dataclass(frozen=True)
 class ModelParams(ABC):
-    """Base dataclass for model-specific hyperparameters.
+    """
+    Abstract base dataclass for model-specific hyperparameters.
 
-    Acts as a lightweight, immutable container that model parameter classes
-    can inherit from. Provides a standardized ``to_dict()`` for converting
-    dataclass fields to a parameter mapping suitable for sklearn estimators,
-    and requires subclasses to implement ``info()`` for human-readable summaries.
+    Acts as an immutable container for model settings. Subclasses define
+    specific parameters (e.g., n_estimators, max_depth) while inheriting
+    standardized serialization and search space calculations.
 
-    Attributes:
-        random_state: Optional seed used by estimators for reproducibility.
-            Defaults to ``None`` (no fixed seed).
+    Attributes
+    ----------
+    random_state : int, optional
+        Seed used for reproducibility. Defaults to None.
+    optimization_strategy : OptimizationStrategy
+        The method used to select these parameters (Manual, Grid, or Random).
     """
 
     random_state: Optional[int] = None
@@ -117,19 +214,28 @@ class ModelParams(ABC):
 
     @abstractmethod
     def info(self) -> str:
+        """Return a human-readable summary of the parameters."""
         pass
 
-    def to_dict(self) -> dict:
-        """Standardizes parameter mapping and handles Enum serialization."""
-        import enum
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert parameters to a dictionary suitable for scikit-learn.
 
+        Automatically filters out None values and converts Enum members
+        to their name strings for compatibility.
+
+        Returns
+        -------
+        dict[str, Any]
+            A mapping of parameter names to values.
+        """
         data = {}
+        # dataclasses.asdict provides a deep copy of the fields
         for k, v in dataclasses.asdict(self).items():
             if v is None:
                 continue
 
-            # If the value is an Enum, extract the value (e.g., 'MANUAL')
-            # so JSON can handle it.
+            # Standardize Enum serialization (e.g., OptimizationStrategy.MANUAL -> "MANUAL")
             if isinstance(v, enum.Enum):
                 data[k] = v.name
             else:
@@ -139,122 +245,79 @@ class ModelParams(ABC):
 
     @property
     def num_candidates(self) -> int:
+        """The total number of parameter combinations to be evaluated."""
         if self.optimization_strategy == OptimizationStrategy.MANUAL:
             return 1
 
-        if self.optimization_strategy == OptimizationStrategy.RANDOM_SEARCH:
-            return ModelSpecification.calculate_optimal_n_iter(
-                self.to_dict(), min_iter=-1
-            )
-
         params_dict = self.to_dict()
 
-        # Multiply lengths of all list-based parameters (Cartesian Product)
+        if self.optimization_strategy == OptimizationStrategy.RANDOM_SEARCH:
+            return calculate_search_iterations(params_dict, min_iter=-1)
+
+        # GRID_SEARCH Logic...
         import math
 
         nc = math.prod(
-            [len(v) if isinstance(v, list) else 1 for v in params_dict.values()]
+            [
+                len(v) if isinstance(v, (list, tuple)) else 1
+                for v in params_dict.values()
+            ]
         )
-        return nc
+        return max(1, nc)
 
     @staticmethod
     @abstractmethod
-    def get_standard_search_grid(narrow: bool = True) -> dict[str, list]:
-        """Every subclass must implement this."""
+    def get_standard_search_grid(narrow: bool = True) -> dict[str, list[Any]]:
+        """
+        Define the default hyperparameter search space for this model type.
+
+        Parameters
+        ----------
+        narrow : bool, default True
+            If True, returns a smaller, more efficient search grid.
+        """
         pass
 
 
 class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
-    """Abstract base class for model specifications with common training parameters.
+    """
+    Abstract base class defining the lifecycle and configuration of an ML model.
 
-    Provides shared functionality for model training, validation prediction, and
-    performance evaluation. Cannot be instantiated directly - must be subclassed
-    by specific model types (Decision Tree, Random Forest, Logistic Regression).
+    This class provides the infrastructure for hyperparameter tuning, cross-validation,
+    and performance auditing. It cannot be instantiated directly; model-specific
+    subclasses (e.g., RandomForestRegressor) must implement the abstract methods.
 
-    This class uses managed mutability: the predicted_train and predicted_val
-    attributes are modified by the calc_predictions() method during model evaluation,
-    but this is controlled through the class interface rather than external manipulation.
-
-    Attributes:
-        estimator_class (Callable[..., T_Estimator]): Sklearn estimator class reference (e.g., DecisionTreeClassifier).
-        params_class (Type[T_Params]): ModelParams subclass for hyperparameter configuration.
-        cv (int): Number of cross-validation folds.
-        balancing_strategy (BalancingStrategy): Strategy for class balancing.
-        scoring (ScoringMetric): Scoring metric for model evaluation.
-        n_jobs (int): Number of parallel jobs (-1 for all CPUs).
-        n_iter (int): Number of iterations for randomized search.
-        max_iter (int): Max iterations for estimators that support it.
-        task_type (TaskType): Type of ML task (default: TaskType.CLASSIFICATION).
-        model_dials (T_Params): Model-specific hyperparameter container.
-        predicted_train (pd.Series): Training set predictions (modified during evaluation).
-        predicted_val (pd.Series): Validation set predictions (modified during evaluation).
-        optimization_strategy (OptimizationStrategy): Manual vs randomized search.
-
-    Example:
-        >>> # Cannot instantiate directly - use subclasses
-        >>> dtree = DecisionTree(
-        ...     cv=5,
-        ...     balancing_strategy=BalancingStrategy.NONE,
-        ...     task_type=TaskType.CLASSIFICATION,
-        ... )
-
-    Note:
-        This is an abstract base class and cannot be instantiated directly.
-        Subclasses inherit shared functionality while implementing model-specific behavior.
+    Attributes
+    ----------
+    cv : int
+        Number of cross-validation folds.
+    balancing_strategy : BalancingStrategy
+        Strategy for handling class imbalance (Classification only).
+    n_jobs : int
+        Number of parallel processes to use during training.
+    n_iter : int
+        Number of iterations for randomized search. If -1, calculated automatically.
+    max_iter : int
+        Maximum iterations for iterative estimators (e.g., Logistic Regression).
+    acceptable_gap : float
+        The maximum training-to-validation gap for a 'Well-Fit' status.
+    large_gap : float
+        The threshold above which a model is considered 'Overfit'.
+    predicted_train : pd.Series
+        Cached predictions on the training set after evaluation.
+    predicted_val : pd.Series
+        Cached predictions on the validation set after evaluation.
+    optimization_strategy : OptimizationStrategy
+        The method used for parameter tuning (MANUAL, GRID, or RANDOM).
     """
 
     params_class: Type[T_Params]
-
-    @abstractmethod
-    def get_estimator_class(self) -> Type[T_Estimator]:
-        """Return the sklearn estimator class for this model."""
-        pass
-
-    @property
-    @abstractmethod
-    def task_type(self) -> TaskType:
-        """Return the model task type (classification or regression)."""
-        pass
-
-    @property
-    @abstractmethod
-    def scoring(self) -> ScoringMetric:
-        """Return the scoring metric used for evaluation."""
-        pass
-
-    @scoring.setter
-    @abstractmethod
-    def scoring(self, value: ScoringMetric):
-        """Set the scoring metric used for evaluation."""
-        pass
-
-    @property
-    def num_candidates(self) -> int:
-        """Return the number of hyperparameter candidates to evaluate."""
-        return self.model_dials.num_candidates
-
-    @property
-    def total_fits(self) -> int:
-        """Return the total number of estimator fits for the search."""
-        from dsr_utils.formatting import format_label_value_pairs
-
-        cv_count = self.cv if self.cv is not None else 5
-
-        if self.optimization_strategy == OptimizationStrategy.MANUAL:
-            return cv_count
-
-        nc = self.num_candidates
-
-        if nc is None:
-            nc = self.n_iter if self.n_iter != -1 else 1
-
-        return cv_count * nc
 
     def __init__(
         self,
         cv: Optional[int],
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[Any] = None,
+        params: Optional[T_Params] = None,
         n_jobs: int = 3,
         n_iter: int = -1,
         max_iter: int = 1000,
@@ -262,30 +325,17 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         large_gap: float = prefs.large_gap,
         optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
     ):
-        """Initialize shared model configuration parameters.
-
-        Args:
-            cv: Number of CV folds to use.
-            balancing_strategy: Resampling/weighting strategy.
-            params: Optional model parameter object.
-            n_jobs: Parallel job count.
-            n_iter: Iterations for randomized search (-1 for auto).
-            max_iter: Max estimator iterations where supported.
-            acceptable_gap: Gap threshold for marginal generalization.
-            large_gap: Gap threshold for overfit generalization.
-            optimization_strategy: Manual, grid, or randomized search.
-        """
+        """Initialize the shared model configuration."""
         self.cv = cv
         self.balancing_strategy = balancing_strategy
+
+        # Validation: Ensure the scoring metric is compatible with the task type
         valid_metrics = ScoringMetric.get_valid_metrics(self.task_type)
-
         if self.scoring not in valid_metrics:
-            valid_names = [m.name for m in valid_metrics]
             enum_format = EnumFormat(use_value=False)
-
             raise ValueError(
-                f"Invalid scoring metric '{enum_format.format_value(self.scoring)}' for task type {enum_format.format_value(self.task_type)}. "
-                f"Valid options are: {valid_names}"
+                f"Invalid metric '{enum_format.format_value(self.scoring)}' "
+                f"for {self.task_type.value}. Valid: {[m.name for m in valid_metrics]}"
             )
 
         self.n_jobs = n_jobs
@@ -293,91 +343,129 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         self.max_iter = max_iter
         self.acceptable_gap = acceptable_gap
         self.large_gap = large_gap
+        self.optimization_strategy = optimization_strategy
+
+        # Managed Mutability placeholders
         self.predicted_train = pd.Series(dtype=float)
         self.predicted_val = pd.Series(dtype=float)
-        self.optimization_strategy = optimization_strategy
+        self.estimator: Optional[T_Estimator] = None
+
+    @abstractmethod
+    def get_estimator_class(self) -> Type[T_Estimator]:
+        """Return the scikit-learn estimator class reference."""
+        pass
+
+    @property
+    @abstractmethod
+    def task_type(self) -> TaskType:
+        """The high-level ML task (Classification or Regression)."""
+        pass
+
+    @property
+    @abstractmethod
+    def scoring(self) -> ScoringMetric:
+        """The metric used to optimize and evaluate the model."""
+        pass
+
+    @scoring.setter
+    @abstractmethod
+    def scoring(self, value: ScoringMetric) -> None:
+        """Set the optimization metric."""
+        pass
 
     @property
     @abstractmethod
     def model_type(self) -> ModelType:
-        """Every model must identify itself."""
+        """The specific enum identifier for this model (e.g., RIDGE)."""
         pass
 
     @property
     @abstractmethod
     def model_dials(self) -> T_Params:
-        """Every model must return its parameters."""
+        """The hyperparameter container for this specific model."""
         pass
 
     @model_dials.setter
     @abstractmethod
     def model_dials(self, value: T_Params) -> None:
-        """Update the current model parameters."""
+        """Update the hyperparameter configuration."""
         pass
 
     @property
+    def num_candidates(self) -> int:
+        """Total hyperparameter combinations to be evaluated."""
+        return self.model_dials.num_candidates
+
+    @property
+    def total_fits(self) -> int:
+        """
+        The total number of estimator training cycles (candidates * CV folds).
+        """
+        cv_count = self.cv if self.cv is not None else 5
+
+        if self.optimization_strategy == OptimizationStrategy.MANUAL:
+            return cv_count
+
+        nc = self.num_candidates
+        # Fallback to n_iter if num_candidates logic hasn't resolved yet
+        if nc is None or nc <= 0:
+            nc = self.n_iter if self.n_iter != -1 else 1
+
+        return cv_count * nc
+
+    @property
     def feature_importances(self) -> Optional[np.ndarray]:
-        """Return feature importance values if the estimator exposes them."""
+        """
+        Extract importance/coefficients from the fitted estimator.
+
+        Returns
+        -------
+        Optional[np.ndarray]
+            An array of feature weights, normalized as absolute values
+            for linear models. Returns None if model is not fitted.
+        """
         if self.estimator is None:
             return None
 
-        # Use getattr with a default of None to satisfy Pylance
-        # We cast to Optional[np.ndarray] so the rest of our code knows the type
-
-        # 1. Try Tree-based
+        # 1. Check for standard tree-based importance
         importances = getattr(self.estimator, "feature_importances_", None)
         if importances is not None:
             return cast(np.ndarray, importances)
 
-        # 2. Try Linear-based
+        # 2. Check for linear coefficients
         coef = getattr(self.estimator, "coef_", None)
         if coef is not None:
-            raw_coef = cast(np.ndarray, coef)
-            return np.abs(raw_coef).flatten()
+            # Flatten in case of multi-class coefficients
+            return np.abs(cast(np.ndarray, coef)).flatten()
 
         return None
 
     @abstractmethod
     def create_estimator(self, parameters: Optional[T_Params] = None) -> T_Estimator:
-        """Create a configured estimator instance from parameters."""
+        """Instantiate a raw scikit-learn estimator with current settings."""
         pass
 
     def is_probabilistic(self, estimator: Any) -> TypeGuard[ProbabilisticClassifier]:
-        """Runtime and static check for probability support."""
+        """
+        Verify if the estimator supports class probability prediction.
+        """
         return hasattr(estimator, "predict_proba")
 
-    @classmethod
-    def calculate_optimal_n_iter(
-        cls, grid: dict, min_iter: int = -1, max_iter: int = 100, coverage: float = 0.10
-    ) -> int:
+    def _get_fitted_estimator(self) -> T_Estimator:
         """
-        Calculates n_iter based on a percentage of the total search space.
+        Internal helper to ensure the estimator exists before use.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the model has been fitted.
         """
-        import math
-
-        # 1. Calculate the total size of the grid
-        total_combinations = 1
-        for values in grid.values():
-            # If it's a distribution, it has infinite size.
-            # We treat it as a "large" space to trigger max_iter.
-            if hasattr(values, "rvs"):
-                total_combinations = int(
-                    max_iter / coverage
-                )  # Force the math to hit max_iter
-                break
-
-            if isinstance(values, list):
-                total_combinations *= len(values)
-
-        # 2. Apply coverage (e.g., try to hit 10% of the space)
-        calculated_iter = int(math.ceil(total_combinations * coverage))
-
-        # If the grid is very small (e.g., < 10 combinations), searching 10% is useless.
-        # Use max(calculated_iter, min(total_combinations, 10)) or a fixed floor.
-        actual_iter = max(calculated_iter, min(total_combinations, 5))
-
-        # 3. Clip the results to stay within reasonable time limits
-        return max(min_iter, min(actual_iter, max_iter))
+        if self.estimator is None:
+            raise RuntimeError(
+                f"The {self.model_type.value} estimator has not been fitted yet. "
+                "Call 'fit()' or 'tune()' before attempting to generate predictions."
+            )
+        return self.estimator
 
     def tune_model(
         self,
@@ -389,23 +477,50 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         max_sample_size: Optional[int] = None,
         perform_memory_check: bool = True,
     ) -> Tuple[T_Params, float, bool, float, float, float, float]:
-        """Run hyperparameter search and update model parameters.
-
-        Args:
-            data_splits: Train/validation splits used for tuning.
-            method: Optimization strategy (grid or random search).
-            features_to_fit_set: Feature metadata set used to select columns.
-            custom_grid: Optional search grid override.
-            use_combined_data: If True, tune on train+val combined.
-            max_sample_size: Optional cap on rows for faster tuning.
-            perform_memory_check: If True, estimate memory risk before tuning.
-
-        Returns:
-            Tuple of (best_params, best_score, risk_triggered, available_gb,
-            estimated_peak_gb, model_multiplier, sampling_factor).
         """
+        Execute hyperparameter optimization and update model parameters.
+
+        This method performs a GridSearchCV or RandomizedSearchCV on a subset of the
+        data to find optimal hyperparameters while preventing system OOM (Out of Memory)
+        errors through predictive memory auditing.
+
+        Parameters
+        ----------
+        data_splits : DataSplits
+            Container for training and validation datasets.
+        method : OptimizationStrategy
+            The base search strategy (GRID_SEARCH or RANDOM_SEARCH).
+        features_to_fit_set : set[FeatureMetadata]
+            The set of features to include in the training process.
+        custom_grid : dict[str, Any], optional
+            A user-provided search space. If None, the standard library grid is used.
+        use_combined_data : bool, default False
+            If True, combines training and validation sets for the tuning phase.
+        max_sample_size : int, optional
+            The maximum number of rows to use for tuning. Defaults to 10% of data
+            or 100,000 rows (whichever is smaller).
+        perform_memory_check : bool, default True
+            If True, validates memory headroom before starting the search.
+
+        Returns
+        -------
+        best_params : T_Params
+            The updated hyperparameter container with the best found values.
+        best_score : float
+            The mean cross-validated score of the best_estimator.
+        risk_triggered : bool
+            True if the memory audit detected a high risk of OOM.
+        available_gb : float
+            System memory available at the start of tuning (in bytes).
+        estimated_peak_gb : float
+            Predicted maximum memory usage for the tuning process (in bytes).
+        model_multiplier : float
+            The complexity multiplier used for the memory estimation.
+        sampling_factor : float
+            The percentage of the dataset actually used (e.g., 0.1 for 10%).
+        """
+        # 1. Prepare Data
         if use_combined_data:
-            # Combine the already-scaled features and targets
             features = pd.concat([data_splits.train_features, data_splits.val_features])
             target = pd.concat([data_splits.train_target, data_splits.val_target])
         else:
@@ -415,149 +530,129 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         feature_list = [f.name for f in features_to_fit_set]
         features = features[feature_list]
         total_rows = len(features)
-        memory_risk_triggered: bool = False
-        estimated_peak_gb: float = 0.0
-        available_gb: float = 0.0
-        model_multiplier: float = 1.0
-        sampling_factor: float = 1.0
 
-        def get_tuning_samples(
-            features: pd.DataFrame, target: pd.Series[Any], rows: int, random_state: int
-        ) -> Tuple[pd.DataFrame, pd.Series[Any]]:
-            tuning_features = features.sample(n=rows, random_state=random_state)
-            tuning_target = target.loc[tuning_features.index]
-            return tuning_features, tuning_target
+        # Initialize monitoring variables
+        memory_risk_triggered = False
+        estimated_peak_gb, available_gb = 0.0, 0.0
+        model_multiplier, sampling_factor = 1.0, 1.0
 
+        # Internal Helper: Sampling
+        def _apply_sampling(size: int) -> Tuple[pd.DataFrame, pd.Series[Any], float]:
+            if size >= total_rows:
+                return features, target, 1.0
+
+            s_feat = features.sample(n=size, random_state=data_splits.random_state)
+            s_targ = target.loc[s_feat.index]
+            factor = size / total_rows
+            return s_feat, s_targ, factor
+
+        # 2. Heuristic Sampling (Speed)
         if max_sample_size is None:
-            # Heuristic: Cap at 10% of data OR 500k rows, whichever is smaller
-            # to ensure the "Tune" phase remains fast (under 2 mins)
             max_sample_size = min(prefs.min_target_tuning_rows, int(total_rows * 0.10))
 
-        sample_size_format = IntegerFormat()
-        sampling_factor_format = PercentageFormat(precision=1)
-
         if total_rows > max_sample_size:
-            sampling_factor = max_sample_size / total_rows
-            total_rows_format = IntegerFormat()
-            print(
-                f"⚠️ Dataset size ({total_rows_format.format_value(total_rows)}) exceeds tuning safety limit."
+            print(f"⚠️ Dataset ({total_rows:,} rows) exceeds tuning safety limit.")
+            tuning_features, tuning_target, sampling_factor = _apply_sampling(
+                max_sample_size
             )
             print(
-                f"📉 Sampling {sample_size_format.format_value(max_sample_size)} rows ({sampling_factor_format.format_value(sampling_factor)}) for optimization phase..."
-            )
-
-            tuning_features, tuning_target = get_tuning_samples(
-                features, target, max_sample_size, data_splits.random_state
+                f"📉 Sampling {len(tuning_features):,} rows ({sampling_factor:.1%}) for optimization..."
             )
         else:
-            tuning_features = features
-            tuning_target = target
+            tuning_features, tuning_target = features, target
 
+        # 3. Memory Safety Check
         if perform_memory_check:
             from dsr_feature_eng_ml.utils.memory import check_memory_risk
 
             memory_risk_triggered, estimated_peak_gb, available_gb, model_multiplier = (
                 check_memory_risk(tuning_features, self, self.n_jobs)
             )
-            risk_format = BoolFormat(representation=BoolRepresentation.YES_NO)
-            print(
-                f"Risk: {risk_format.format_value(memory_risk_triggered)} | Estimated peak: {prefs.gb_format.format_value(estimated_peak_gb)} | Available: {prefs.gb_format.format_value(available_gb)}"
-            )
 
+        # 4. Emergency Downsampling (OOM Prevention)
         if memory_risk_triggered:
             print(
-                f"🚨 DANGER: Predicted peak memory {prefs.gb_format.format_value(estimated_peak_gb)} exceeds available {prefs.gb_format.format_value(available_gb)}."
+                f"🚨 DANGER: Predicted peak {prefs.gb_format.format_value(estimated_peak_gb)} "
+                f"exceeds safety buffer of available {prefs.gb_format.format_value(available_gb)}."
             )
-            max_sample_size = int(
-                int(total_rows * (available_gb / estimated_peak_gb) * 0.7)
+
+            # Reduce sample size based on the ratio of available vs required memory
+            safety_limit = int(
+                len(tuning_features) * (available_gb / estimated_peak_gb) * 0.7
             )
-            sampling_factor = max_sample_size / total_rows
-            tuning_features, tuning_target = get_tuning_samples(
-                features, target, max_sample_size, data_splits.random_state
+            tuning_features, tuning_target, sampling_factor = _apply_sampling(
+                safety_limit
             )
             print(
-                f"📉 Sampling {sample_size_format.format_value(max_sample_size)} rows ({sampling_factor_format.format_value(sampling_factor)}) for optimization phase..."
+                f"📉 Emergency downsampling to {len(tuning_features):,} rows ({sampling_factor:.1%})..."
             )
 
-        # 1. Get the grid: Either passed in, or the standard one for this model type
-        if custom_grid is None:
-            # Check if the existing params object already contains lists (a search space)
-            potential_grid = dataclasses.asdict(self.model_dials)
-            search_space = {
-                k: v for k, v in potential_grid.items() if isinstance(v, (list, tuple))
-            }
-
-            if search_space:
-                grid = search_space
-            else:
-                grid = self.params_class.get_standard_search_grid(narrow=True)
-        else:
+        # 5. Build Search Space
+        if custom_grid:
             grid = custom_grid
+        else:
+            # Detect if current dials already contain a search space (lists/tuples)
+            current_dials_dict = dataclasses.asdict(self.model_dials)
+            search_space = {
+                k: v
+                for k, v in current_dials_dict.items()
+                if isinstance(v, (list, tuple))
+            }
+            grid = (
+                search_space
+                if search_space
+                else self.params_class.get_standard_search_grid(narrow=True)
+            )
 
-        # 2. Detect the REAL strategy
-        # If any value is a distribution (has .rvs), we are forced into Random Search
+        # Determine Strategy
         is_dist_search = any(hasattr(v, "rvs") for v in grid.values())
-
         if is_dist_search or method == OptimizationStrategy.RANDOM_SEARCH:
             self.optimization_strategy = OptimizationStrategy.RANDOM_SEARCH
         else:
             self.optimization_strategy = OptimizationStrategy.GRID_SEARCH
 
-        # 3. Execution
-        search_cv_model = cast(BaseEstimator, self.create_estimator())
+        # 6. Execute Search
+        base_estimator = self.create_estimator()
 
-        def _prepare_search_grid(estimator, custom_grid: dict) -> dict:
-            """
-            1. Filters out keys that aren't valid for the estimator.
-            2. Wraps scalars in lists to satisfy Scikit-Learn SearchCV requirements.
-            """
-            from collections.abc import Iterable
-
-            # Get the valid parameters for this specific Scikit-Learn model
-            valid_params = estimator.get_params().keys()
-
+        def _prepare_search_grid(est: Any, raw_grid: dict) -> dict:
+            valid_params = est.get_params().keys()
             clean_grid = {}
-            for k, v in custom_grid.items():
+            for k, v in raw_grid.items():
                 if k in valid_params:
-                    # Check if it's already a list/dist (Scikit-Learn requirement)
-                    if isinstance(v, (list, tuple)) or hasattr(v, "rvs"):
-                        clean_grid[k] = v
-                    else:
-                        # Wrap scalar (75 -> [75])
-                        clean_grid[k] = [v]
-
+                    # CV Searchers require iterables or distributions
+                    clean_grid[k] = (
+                        v if isinstance(v, (list, tuple)) or hasattr(v, "rvs") else [v]
+                    )
             return clean_grid
 
         if self.optimization_strategy == OptimizationStrategy.RANDOM_SEARCH:
-            refined_grid = _prepare_search_grid(search_cv_model, grid)
-
-            # Dynamically set n_iter if it was passed as -1 or 'auto'
+            refined_grid = _prepare_search_grid(base_estimator, grid)
             if self.n_iter == -1:
-                self.n_iter = self.calculate_optimal_n_iter(refined_grid)
+                self.n_iter = calculate_search_iterations(refined_grid)
 
             search_cv = RandomizedSearchCV(
-                estimator=search_cv_model,
+                estimator=cast(BaseEstimator, base_estimator),
                 param_distributions=refined_grid,
                 n_iter=self.n_iter,
                 cv=self.cv,
                 scoring=self.scoring.value,
                 n_jobs=self.n_jobs,
                 verbose=prefs.cv_verbose,
-                random_state=data_splits.random_state,  # Use data seed for search
+                random_state=data_splits.random_state,
             )
         else:
             search_cv = GridSearchCV(
-                estimator=search_cv_model,
-                param_grid=grid,
+                estimator=cast(BaseEstimator, base_estimator),
+                param_grid=_prepare_search_grid(base_estimator, grid),
                 cv=self.cv,
                 scoring=self.scoring.value,
                 n_jobs=self.n_jobs,
                 verbose=prefs.cv_verbose,
             )
 
-        # 4. Fit using data_splits attributes
         search_cv.fit(tuning_features, tuning_target)
 
+        # 7. Update State and Return
         self.model_dials = dataclasses.replace(
             self.model_dials, **search_cv.best_params_
         )
@@ -578,39 +673,57 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         features_to_fit_set: set[FeatureMetadata],
         use_combined_data: bool = False,
     ) -> Tuple[float, float]:
-        """Fit the estimator and return memory usage stats.
-
-        Args:
-            data_splits: Train/validation splits used for fitting.
-            features_to_fit_set: Feature metadata used to select input columns.
-            use_combined_data: If True, fit on train+val combined data.
-
-        Returns:
-            Tuple of (memory_used_bytes, peak_rss_bytes).
         """
-        # 1. Get the data (Resampled if OVERSAMPLED/UNDERSAMPLED, otherwise original)
+        Train the estimator and capture memory performance metrics.
+
+        This method handles data balancing (resampling or weighting), instantiates
+        the raw estimator, and measures the RSS (Resident Set Size) memory delta
+        specifically during the fitting process.
+
+        Parameters
+        ----------
+        data_splits : DataSplits
+            The container for training and validation datasets.
+        features_to_fit_set : set[FeatureMetadata]
+            Metadata defining which columns to include in the training set.
+        use_combined_data : bool, default False
+            If True, training and validation sets are merged before fitting.
+
+        Returns
+        -------
+        mem_used : float
+            The difference in memory usage (bytes) between start and end of fit.
+        peak_rss : float
+            The absolute peak Resident Set Size (bytes) measured after fit.
+        """
+        # 1. Prepare Data based on Balancing Strategy
         X, y = data_splits.get_balanced_train_data(
             strategy=self.balancing_strategy,
             feature_set=features_to_fit_set,
             use_combined_data=use_combined_data,
         )
 
-        # 2. Get the weights (Only non-None if strategy is WEIGHTED)
-        # Check task_type property to decide if it's regression
+        # 2. Extract weights for WEIGHTED strategy
         weights = data_splits.get_train_weights(
             self.balancing_strategy,
             is_regression=(self.task_type == TaskType.REGRESSION),
         )
 
-        # 3. Fit the estimator
-        # Most scikit-learn estimators accept sample_weight=None by default
+        # 3. Instantiate and Fit
         self.estimator = self.create_estimator()
+
+        # Memory baseline
         process = psutil.Process(os.getpid())
         mem_before = process.memory_info().rss
+
+        # Execute fit - Pylance is happy here because we just assigned self.estimator
         self.estimator.fit(X, y, sample_weight=weights)
+
+        # Memory telemetry
         mem_after = process.memory_info().rss
         mem_used = mem_after - mem_before
-        return mem_used, mem_after
+
+        return float(mem_used), float(mem_after)
 
     def fit_and_evaluate_val(
         self,
@@ -622,28 +735,46 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         filter_outliers: bool = False,
         outlier_count: int = prefs.default_worst_errors_n,
     ) -> ModelConfiguration:
-        """Fit the model and return a validation-scored configuration.
-
-        Args:
-            data_splits: Train/validation splits.
-            id: Identifier for the resulting configuration.
-            features_to_fit_set: Feature metadata used to select input columns.
-            score_cv: Optional CV score to include in the config.
-            use_combined_data: If True, fit on train+val combined data.
-            filter_outliers: If True, remove worst errors for cleaned metrics.
-            outlier_count: Number of worst errors to treat as outliers.
-
-        Returns:
-            A `ModelConfiguration` populated with validation metrics and stats.
         """
-        # 1. Action: Fit the model
+        Execute a full training cycle and generate a validation-scored configuration.
+
+        This method encapsulates the "Fit" and "Analyze" workflow: it trains the
+        underlying estimator, captures telemetry, and then triggers the evaluation
+        logic to compute generalization metrics and store predictions.
+
+        Parameters
+        ----------
+        data_splits : DataSplits
+            The dataset container providing training and validation splits.
+        id : str
+            A unique identifier for this specific model configuration.
+        features_to_fit_set : set[FeatureMetadata]
+            The specific set of features used for training.
+        score_cv : float, optional
+            The cross-validation score obtained during tuning, if applicable.
+        use_combined_data : bool, default False
+            Whether the model was trained on the combined train/validation sets.
+        filter_outliers : bool, default False
+            If True, calculates a "cleaned" set of metrics by removing the
+            observations with the largest errors.
+        outlier_count : int, default prefs.default_worst_errors_n
+            The number of high-error observations to exclude if filter_outliers is True.
+
+        Returns
+        -------
+        ModelConfiguration
+            A populated container holding the fitted estimator parameters,
+            performance metrics, and system telemetry (memory/time).
+        """
+        # 1. Action: Fit the model and capture memory telemetry
         mem_used, mem_peak = self.fit(
             data_splits=data_splits,
             features_to_fit_set=features_to_fit_set,
             use_combined_data=use_combined_data,
         )
 
-        # 2. Analysis: Generate metrics and return the result
+        # 2. Analysis: Generate metrics and compile the ModelConfiguration
+        # Note: self.evaluate_val_performance internally calls calc_predictions()
         return self.evaluate_val_performance(
             data_splits=data_splits,
             id=id,
@@ -663,48 +794,78 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         filter_outliers: bool,
         outlier_count: int,
     ) -> Tuple[float, Optional[float], pd.Series, pd.DataFrame]:
-        """Compute classification scores and prediction outputs.
-
-        Args:
-            features: Feature matrix for scoring.
-            targets: Ground-truth labels.
-            filter_outliers: If True, drop the most confident incorrect predictions.
-            outlier_count: Number of outliers to remove when filtering.
-
-        Returns:
-            Tuple of (f1, f1_cleaned, preds, probs).
         """
-        prob_estimator = cast(ProbabilisticClassifier, self.estimator)
+        Compute weighted F1 scores and extract class probabilities.
 
-        # 1. Get discrete predictions and probabilities
+        This internal method handles the logic for calculating baseline performance
+        and the "cleaned" performance metric, which excludes the most confident
+        incorrect predictions (outliers).
+
+        Parameters
+        ----------
+        features : pd.DataFrame
+            The feature matrix used for generating predictions.
+        targets : pd.Series
+            The ground-truth class labels.
+        filter_outliers : bool
+            If True, calculates an additional 'cleaned' F1 score.
+        outlier_count : int
+            The number of high-confidence errors to exclude from the cleaned score.
+
+        Returns
+        -------
+        f1 : float
+            The standard weighted F1 score.
+        f1_cleaned : float, optional
+            The weighted F1 score after removing outliers. None if filter_outliers is False.
+        preds : pd.Series
+            Discrete class predictions indexed to the input features.
+        probs : pd.DataFrame
+            Class probabilities indexed to the input features.
+        """
+        # 1. Safety Guard: Ensure estimator is fitted and supports probabilities
+        # This solves the Pylance "estimator is None" and "predict_proba missing" errors
+        estimator = self._get_fitted_estimator()
+
+        # We cast to ProbabilisticClassifier to ensure Pylance recognizes predict_proba
+        prob_estimator = cast(ProbabilisticClassifier, estimator)
+
+        # 2. Generate raw outputs
         raw_preds = prob_estimator.predict(features)
         raw_probs = prob_estimator.predict_proba(features)
 
-        # 2. Wrap in a Series with the correct index
-        preds = pd.Series(raw_preds, index=targets.index)
+        # 3. Align with original indices
+        preds = pd.Series(raw_preds, index=targets.index, name="predictions")
         probs = pd.DataFrame(raw_probs, index=targets.index)
 
-        # 3. Calculate Standard F1
+        # 4. Standard Metric Calculation
+        from sklearn.metrics import f1_score
+
         f1 = float(f1_score(targets, preds, average="weighted"))
 
+        # 5. Outlier Filtering (Confident Mistakes)
+        f1_cleaned: Optional[float] = None
+
         if filter_outliers:
-            # Identify outliers: Wrong predictions where confidence was highest
-            # Create a mask where prediction != actual
+            # Mask where prediction is wrong
             incorrect_mask = targets.to_numpy() != raw_preds
 
-            # Get the confidence score for the predicted class
-            # raw_probs is (N, classes). np.max gives the confidence of the chosen class.
+            # Confidence is the max probability assigned to any single class
             confidences = np.max(raw_probs, axis=1)
 
-            # We only care about confidence when the model was WRONG.
-            # Set confidence to -1 for correct predictions so they aren't 'top' outliers.
+            # Assign high scores only to incorrect predictions
+            # Correct predictions are ignored (set to -1)
             error_scores = np.where(incorrect_mask, confidences, -1.0)
 
-            # Drop the top N most confident mistakes
-            n_to_keep = len(error_scores) - outlier_count
+            # Partition to find indices of the worst errors
+            n_to_drop = min(
+                outlier_count, int(len(error_scores) * 0.5)
+            )  # Safety cap at 50%
+            n_to_keep = len(error_scores) - n_to_drop
+
+            # Identify indices of the observations to retain
             keep_indices = np.argpartition(error_scores, n_to_keep)[:n_to_keep]
 
-            # Calculate "Cleaned" F1
             f1_cleaned = float(
                 f1_score(
                     targets.iloc[keep_indices],
@@ -712,8 +873,6 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
                     average="weighted",
                 )
             )
-        else:
-            f1_cleaned = None
 
         return f1, f1_cleaned, preds, probs
 
@@ -724,38 +883,65 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         filter_outliers: bool,
         outlier_count: int,
     ) -> tuple[float, float, float, Optional[float], pd.Series]:
-        """Compute regression metrics and predictions.
-
-        Args:
-            features: Feature matrix for scoring.
-            targets: Ground-truth targets.
-            filter_outliers: If True, drop largest absolute errors.
-            outlier_count: Number of outliers to remove when filtering.
-
-        Returns:
-            Tuple of (mae, mse, r2, r2_cleaned, preds).
         """
-        # Generate predictions internally to ensure index matching
-        raw_preds = self.estimator.predict(features)
-        preds = pd.Series(raw_preds, index=targets.index)
+        Compute standard regression metrics and residual-based 'cleaned' R2.
+
+        Parameters
+        ----------
+        features : pd.DataFrame
+            The feature matrix for generating predictions.
+        targets : pd.Series
+            The ground-truth numerical targets.
+        filter_outliers : bool
+            If True, calculates an additional 'cleaned' R2 score.
+        outlier_count : int
+            The number of high-absolute-error observations to exclude.
+
+        Returns
+        -------
+        mae : float
+            Mean Absolute Error.
+        mse : float
+            Mean Squared Error.
+        r2 : float
+            Coefficient of Determination (R-squared).
+        r2_cleaned : float, optional
+            R-squared calculated after removing outlier residuals.
+        preds : pd.Series
+            Predictions indexed to the input features.
+        """
+        # 1. Safety Guard: Ensure estimator exists and is fitted
+        estimator = self._get_fitted_estimator()
+
+        # 2. Generate predictions and align indices
+        raw_preds = estimator.predict(features)
+        preds = pd.Series(raw_preds, index=targets.index, name="predictions")
+
+        # 3. Standard Metric Calculation
+        from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
         mae = float(mean_absolute_error(targets, preds))
         mse = float(mean_squared_error(targets, preds))
         r2 = float(r2_score(targets, preds))
 
+        # 4. Outlier Filtering (Largest Residuals)
+        r2_cleaned: Optional[float] = None
+
         if filter_outliers:
-            # Identify and remove outliers
+            # Calculate absolute residuals
             abs_errors = np.abs((targets.to_numpy() - raw_preds).flatten())
 
-            # Get indices of the rows with the smallest errors (dropping the top N)
-            # We use partition for efficiency (O(n) vs O(n log n))
-            n_to_keep = len(abs_errors) - outlier_count
+            # Efficiency: O(n) partition to find the top N errors
+            n_to_drop = min(outlier_count, int(len(abs_errors) * 0.5))
+            n_to_keep = len(abs_errors) - n_to_drop
+
+            # Retrieve indices of the samples with the lowest errors
             keep_indices = np.argpartition(abs_errors, n_to_keep)[:n_to_keep]
 
-            # Calculate "Cleaned" R2
-            r2_cleaned = r2_score(targets.iloc[keep_indices], raw_preds[keep_indices])
-        else:
-            r2_cleaned = None
+            # Calculate the "Cleaned" version of the score
+            r2_cleaned = float(
+                r2_score(targets.iloc[keep_indices], raw_preds[keep_indices])
+            )
 
         return mae, mse, r2, r2_cleaned, preds
 
@@ -772,47 +958,63 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         filter_outliers: bool = False,
         outlier_count: int = prefs.default_worst_errors_n,
     ) -> ModelConfiguration:
-        """Evaluate validation performance and build a ModelConfiguration.
-
-        Computes task-specific metrics and attaches feature importance and
-        distribution stats.
-
-        Args:
-            data_splits: Train/validation splits used for evaluation.
-            id: Identifier for the resulting configuration.
-            features_to_fit_set: Feature metadata used to select columns.
-            mem_used: Bytes used during fit.
-            mem_peak: Peak RSS bytes during fit.
-            use_combined_data: If True, model was fit on train+val combined data.
-            params: Optional params override (defaults to `model_dials`).
-            score_cv: Optional CV score to include.
-            filter_outliers: If True, compute cleaned metrics by dropping worst errors.
-            outlier_count: Number of outliers to drop.
-
-        Returns:
-            Populated `ModelConfiguration` with validation metrics and stats.
         """
+        Evaluate model performance and construct a comprehensive ModelConfiguration.
+
+        This method orchestrates task-specific scoring (Classification vs. Regression),
+        feature importance extraction, and distribution analysis. It populates a
+        standardized configuration object used by the Auditor for model selection.
+
+        Parameters
+        ----------
+        data_splits : DataSplits
+            The container for training and validation datasets.
+        id : str
+            A unique identifier for the resulting configuration.
+        features_to_fit_set : set[FeatureMetadata]
+            Metadata defining the specific columns used for evaluation.
+        mem_used : float
+            Resident memory delta measured during the fit process (bytes).
+        mem_peak : float
+            Peak Resident Set Size (RSS) measured after fitting (bytes).
+        use_combined_data : bool
+            Indicator if the model was trained on merged train/validation sets.
+        params : T_Params, optional
+            Hyperparameters to attach to the config. Defaults to current model_dials.
+        score_cv : float, optional
+            The cross-validation score from the tuning phase.
+        filter_outliers : bool, default False
+            If True, calculates 'cleaned' metrics by excluding highest-error samples.
+        outlier_count : int, default prefs.default_worst_errors_n
+            The number of high-error observations to exclude if filtering.
+
+        Returns
+        -------
+        ModelConfiguration
+            A fully populated container holding metrics, predictions, and stats.
+        """
+        # Late import to prevent circular dependency at module level
         from dsr_feature_eng_ml.evaluation.schema import ModelConfiguration
 
-        # 1. Type Guard: Ensure we have params
-        # If None, fall back to the defaults in self.model_dials
+        # 1. Setup Context
         active_params = params if params is not None else self.model_dials
         feature_list = [f.name for f in features_to_fit_set]
 
-        # Select features/target for evaluation
-        eval_features = data_splits.val_features
+        eval_features = data_splits.val_features[feature_list]
         eval_target = data_splits.val_target
-        eval_features = eval_features[feature_list]
+        train_features = data_splits.train_features[feature_list]
+        train_target = data_splits.train_target
 
-        # Handle Task-Specific Scoring
+        # 2. Task-Specific Scoring
         if self.task_type == TaskType.CLASSIFICATION:
-            # Get values
+            # Training metrics
             acc_train, _, _, _ = self._score_classification(
-                features=data_splits.train_features[feature_list],
-                targets=data_splits.train_target,
+                features=train_features,
+                targets=train_target,
                 filter_outliers=filter_outliers,
                 outlier_count=outlier_count,
             )
+            # Validation metrics
             acc_val, acc_val_cleaned, preds_val, probs_val = self._score_classification(
                 features=eval_features,
                 targets=eval_target,
@@ -820,29 +1022,29 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
                 outlier_count=outlier_count,
             )
 
-            # Assign to primary pointers
-            score_train = acc_train
-            score_val = acc_val
-            score_val_cleaned = acc_val_cleaned
+            score_train, score_val, score_val_cleaned = (
+                acc_train,
+                acc_val,
+                acc_val_cleaned,
+            )
+            accuracy_train, accuracy_val, accuracy_val_cleaned = (
+                acc_train,
+                acc_val,
+                acc_val_cleaned,
+            )
 
-            # Assign to specific attributes
-            accuracy_train = acc_train
-            accuracy_val = acc_val
-            accuracy_val_cleaned = acc_val_cleaned
-
-            # Initialize regression metrics as None for classification results
+            # Nullify regression-specific metrics
             mae_train = mse_train = r2_train = None
             mae_val = mse_val = r2_val = r2_val_cleaned = None
+
         else:
-            # Regression path: also passing DataFrames now
+            # Regression path
             mae_train, mse_train, r2_train, _, _ = self._score_regression(
-                features=data_splits.train_features[feature_list],
-                targets=data_splits.train_target,
+                features=train_features,
+                targets=train_target,
                 filter_outliers=False,
                 outlier_count=0,
             )
-            score_train = r2_train
-
             mae_val, mse_val, r2_val, r2_val_cleaned, preds_val = (
                 self._score_regression(
                     features=eval_features,
@@ -851,18 +1053,14 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
                     outlier_count=outlier_count,
                 )
             )
-            score_val = r2_val
-            score_val_cleaned = r2_val_cleaned
 
-            # Initialize classification metrics as None for regression results
+            score_train, score_val, score_val_cleaned = r2_train, r2_val, r2_val_cleaned
             accuracy_train = accuracy_val = accuracy_val_cleaned = probs_val = None
 
-        # 2. Extract Importance Analysis
-        importance_analysis = self.analyze_feature_importance(
-            features_to_fit_set=features_to_fit_set
-        )
+        # 3. Feature Importance and Initialization
+        importance_analysis = self.analyze_feature_importance(features_to_fit_set)
 
-        config: ModelConfiguration = ModelConfiguration(
+        config = ModelConfiguration(
             id=id,
             model_type=self.model_type,
             task_type=self.task_type,
@@ -900,32 +1098,33 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             num_candidates=self.num_candidates,
         )
 
+        # 4. Statistical Post-Processing
         from dsr_feature_eng_ml.evaluation import ModelConfigurationStats
 
         stats = ModelConfigurationStats.from_config(
             data_splits=data_splits, config=config
         )
-        train_stats = stats.model_split_stats["train"]
-        val_stats = stats.model_split_stats["val"]
-        config = dataclasses.replace(
+        train_s = stats.model_split_stats["train"]
+        val_s = stats.model_split_stats["val"]
+
+        # Use replace for the final statistical augmentation
+        return dataclasses.replace(
             config,
-            train_mean=train_stats.mean,
-            train_std=train_stats.std,
-            train_median=train_stats.median,
-            train_skew=train_stats.skew,
-            train_kurtosis=train_stats.kurtosis,
-            val_mean=val_stats.mean,
-            val_std=val_stats.std,
-            val_median=val_stats.median,
-            val_skew=val_stats.skew,
-            val_kurtosis=val_stats.kurtosis,
+            train_mean=train_s.mean,
+            train_std=train_s.std,
+            train_median=train_s.median,
+            train_skew=train_s.skew,
+            train_kurtosis=train_s.kurtosis,
+            val_mean=val_s.mean,
+            val_std=val_s.std,
+            val_median=val_s.median,
+            val_skew=val_s.skew,
+            val_kurtosis=val_s.kurtosis,
             quality_score=stats.quality_score,
             drift_index=stats.drift_index,
             mean_delta=stats.mean_delta,
             std_delta=stats.std_delta,
         )
-
-        return config
 
     def evaluate_test_set_performance(
         self,
@@ -933,54 +1132,57 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         config: ModelConfiguration,
         features_to_fit_set: set[FeatureMetadata],
     ) -> ModelConfiguration:
-        """Evaluate test-set performance and return an updated configuration.
-
-        Args:
-            data_splits: Train/validation/test splits.
-            config: Existing configuration to update with test metrics.
-            features_to_fit_set: Feature metadata used to select columns.
-
-        Returns:
-            Updated `ModelConfiguration` with test metrics and stats.
         """
-        from dsr_feature_eng_ml.evaluation import (
-            ModelConfigurationStats,
-            SplitType,
-        )
+        Evaluate performance on the hold-out test set and update the configuration.
 
-        # Fit the model
+        This method retrains the model on the combined training and validation sets
+        using the best found hyperparameters, generates predictions for the test set,
+        and calculates final generalization metrics and statistical distributions.
+
+        Parameters
+        ----------
+        data_splits : DataSplits
+            The dataset container providing train, validation, and test splits.
+        config : ModelConfiguration
+            The existing configuration object (holding validation scores) to be
+            augmented with test-set results.
+        features_to_fit_set : set[FeatureMetadata]
+            The specific set of features used for training and evaluation.
+
+        Returns
+        -------
+        ModelConfiguration
+            An updated copy of the configuration containing test scores, predictions,
+            and distribution statistics.
+        """
+        from dsr_feature_eng_ml.evaluation import ModelConfigurationStats, SplitType
+
+        # 1. Action: Retrain on combined (train + val) data for final test
         _, _ = self.fit(
             data_splits=data_splits,
             features_to_fit_set=features_to_fit_set,
             use_combined_data=True,
         )
 
-        # Select features/target for evaluation
-        eval_features = data_splits.test_features
-        eval_target = data_splits.test_target
+        # 2. Setup Context
         feature_list = [f.name for f in features_to_fit_set]
-        eval_features = eval_features[feature_list]
+        eval_features = data_splits.test_features[feature_list]
+        eval_target = data_splits.test_target
 
-        # Handle Task-Specific Scoring
+        # 3. Task-Specific Scoring
         if self.task_type == TaskType.CLASSIFICATION:
-            # Get values
+            # Note: Test set typically does not report 'cleaned' scores to avoid
+            # data leakage/optimism bias, but we pass the flags to maintain interface.
             acc_test, _, preds_test, probs_test = self._score_classification(
                 features=eval_features,
                 targets=eval_target,
                 filter_outliers=config.filter_outliers,
                 outlier_count=config.outlier_count,
             )
-
-            # Assign to primary pointers
             score_test = acc_test
-
-            # Assign to specific attributes
             accuracy_test = acc_test
-
-            # Initialize regression metrics as None for classification results
             mae_test = mse_test = r2_test = None
         else:
-            # Regression path: also passing DataFrames
             mae_test, mse_test, r2_test, _, preds_test = self._score_regression(
                 features=eval_features,
                 targets=eval_target,
@@ -989,10 +1191,9 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             )
             score_test = r2_test
             accuracy_test = None
-
-            # Initialize classification metrics as None for regression results
             probs_test = None
 
+        # 4. Update Configuration Metrics
         config = dataclasses.replace(
             config,
             has_test_set_evaluation_scores=True,
@@ -1004,77 +1205,132 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             preds_test=preds_test,
             probs_test=probs_test,
         )
+
+        # 5. Statistical Distribution Analysis (Test Set)
         stats = ModelConfigurationStats.from_config(
             data_splits=data_splits, config=config, split_type=SplitType.TEST
         )
-        test_stats = stats.model_split_stats["test"]
-        config = dataclasses.replace(
-            config,
-            test_mean=test_stats.mean,
-            test_std=test_stats.std,
-            test_median=test_stats.median,
-            test_skew=test_stats.skew,
-            test_kurtosis=test_stats.kurtosis,
-        )
+        test_s = stats.model_split_stats["test"]
 
-        return config
+        # Final augmentation with statistical properties
+        return dataclasses.replace(
+            config,
+            test_mean=test_s.mean,
+            test_std=test_s.std,
+            test_median=test_s.median,
+            test_skew=test_s.skew,
+            test_kurtosis=test_s.kurtosis,
+        )
 
     @staticmethod
     def find_optimal_threshold(
         data_splits: DataSplits,
         model: ProbabilisticClassifier,
     ) -> tuple[float, float, np.ndarray]:
-        """Find optimal classification threshold by maximizing F1 score.
-
-        Generic method supporting any sklearn-compatible classifier with predict_proba(),
-        including DecisionTreeClassifier, RandomForestClassifier, and LogisticRegression.
-
-        Args:
-            data_splits (DataSplits): Training, validation, and test data splits.
-            model (ProbabilisticClassifier): Untrained classifier with fit() and predict_proba().
-
-        Returns:
-            tuple[float, float, np.ndarray]: (optimal_threshold, test_f1_score, test_probabilities)
         """
+        Find the classification threshold that maximizes the F1-score.
 
+        This utility trains the provided model, evaluates class probabilities on the
+        validation set to locate the optimal threshold via a Precision-Recall curve,
+        and then applies that threshold to the test set to determine final performance.
+
+        Parameters
+        ----------
+        data_splits : DataSplits
+            The container for training, validation, and test data splits.
+        model : ProbabilisticClassifier
+            An uninitialized or pre-configured classifier that supports the
+            `predict_proba` method (e.g., RandomForestClassifier, LogisticRegression).
+
+        Returns
+        -------
+        optimal_threshold : float
+            The probability threshold that yielded the highest validation F1-score.
+        test_f1_score : float
+            The weighted F1-score achieved on the test set using the optimal threshold.
+        test_probabilities : np.ndarray
+            The raw class-1 probabilities generated for the test set.
+
+        Raises
+        ------
+        TypeError
+            If the provided model does not satisfy the `ProbabilisticClassifier` protocol.
+        """
+        from sklearn.metrics import f1_score, precision_recall_curve
+
+        # 1. Verify Protocol Compliance
         if not isinstance(model, ProbabilisticClassifier):
             raise TypeError(
-                f"Model {type(model)} does not support probability predictions."
+                f"The provided model of type {type(model).__name__} does not "
+                "support the required 'predict_proba' method for threshold optimization."
             )
 
+        # 2. Train and Predict Probabilities
         model.fit(data_splits.train_features, data_splits.train_target)
-        valid_proba_array = model.predict_proba(data_splits.val_features)
-        valid_proba = valid_proba_array[:, 1]  # type: ignore[misc]
 
+        # We target the positive class (index 1) for the threshold search
+        valid_proba_array = model.predict_proba(data_splits.val_features)
+        valid_proba = valid_proba_array[:, 1]
+
+        # 3. Locate Optimal Threshold on Validation Set
         precisions, recalls, thresholds = precision_recall_curve(
             data_splits.val_target, valid_proba
         )
 
-        f1_scores = np.nan_to_num(2 * (precisions * recalls) / (precisions + recalls))
+        # Calculate F1: 2 * (precision * recall) / (precision + recall)
+        # We use nan_to_num to handle divisions by zero gracefully
+        numerator = 2 * (precisions * recalls)
+        denominator = precisions + recalls
+        f1_scores = np.nan_to_num(numerator / denominator)
 
-        optimal_threshold_index = np.argmax(f1_scores)
-        optimal_threshold = thresholds[optimal_threshold_index]
+        # Find the index of the maximum F1. Note: thresholds is length n-1
+        # relative to precisions/recalls, but the last f1 is usually 0 (recall=0).
+        opt_idx = int(np.argmax(f1_scores))
 
+        # Ensure we don't exceed the thresholds array bounds
+        actual_idx = min(opt_idx, len(thresholds) - 1)
+        optimal_threshold = float(thresholds[actual_idx])
+
+        # 4. Evaluate on Test Set
         test_proba_array = model.predict_proba(data_splits.test_features)
-        test_proba = test_proba_array[:, 1]  # type: ignore[misc]
+        test_proba = test_proba_array[:, 1]
+
+        # Apply the learned threshold
         y_pred_test = (test_proba >= optimal_threshold).astype(int)
-        final_f1_result = cast(float, f1_score(data_splits.test_target, y_pred_test))
+        final_f1_result = float(
+            f1_score(data_splits.test_target, y_pred_test, average="weighted")
+        )
 
         return optimal_threshold, final_f1_result, test_proba
 
     def analyze_feature_importance(
         self, features_to_fit_set: set[FeatureMetadata]
     ) -> ModelFeatureImportance:
-        """Create feature-importance analysis from the current estimator.
-
-        Args:
-            features_to_fit_set: Feature metadata used to map importances.
-
-        Returns:
-            `ModelFeatureImportance` instance (empty if unsupported).
         """
+        Extract and map feature importance weights to their respective metadata.
+
+        This method retrieves the raw importance values (or absolute coefficients)
+        from the fitted estimator and encapsulates them within a structured
+        ModelFeatureImportance container for downstream auditing and visualization.
+
+        Parameters
+        ----------
+        features_to_fit_set : set[FeatureMetadata]
+            The set of feature metadata objects corresponding to the columns
+            used during the model's training phase.
+
+        Returns
+        -------
+        ModelFeatureImportance
+            A structured container mapping feature names to their importance values.
+            Returns an empty instance if the underlying estimator does not
+            expose importance attributes.
+        """
+        # Late import to avoid circular dependencies with schema definitions
         from dsr_feature_eng_ml.evaluation.schema import ModelFeatureImportance
 
+        # The feature_importances property handles the logic for extracting
+        # both tree-based importance and linear coefficients.
         importances = self.feature_importances
 
         if importances is None:
@@ -1092,22 +1348,38 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         cv: int,
         optimization_strategy: OptimizationStrategy,
         task_type: TaskType,
-        **kwargs,
+        **kwargs: Any,
     ) -> ModelSpecification:
-        """Instantiate a model specification with shared initialization args.
-
-        Args:
-            model_cls: Concrete model specification class.
-            strategy: Balancing strategy.
-            params: Optional params instance to pass through.
-            cv: Cross-validation fold count.
-            optimization_strategy: Grid/random/manual strategy.
-            task_type: Task type for the model.
-            **kwargs: Additional constructor args.
-
-        Returns:
-            Instantiated model specification.
         """
+        Factory method to instantiate a concrete ModelSpecification.
+
+        This utility simplifies the creation of model instances by mapping standard
+        library arguments to the specific constructor requirements of the
+        target model class.
+
+        Parameters
+        ----------
+        model_cls : type[ModelSpecification]
+            The concrete subclass to instantiate (e.g., RandomForest).
+        strategy : BalancingStrategy
+            The resampling or weighting strategy to apply.
+        params : ModelParams, optional
+            A pre-configured hyperparameter container.
+        cv : int
+            The number of cross-validation folds.
+        optimization_strategy : OptimizationStrategy
+            The method used for parameter tuning (MANUAL, GRID, or RANDOM).
+        task_type : TaskType
+            The ML task definition (CLASSIFICATION or REGRESSION).
+        **kwargs : Any
+            Additional model-specific keyword arguments passed to the constructor.
+
+        Returns
+        -------
+        ModelSpecification
+            An initialized instance of the requested model class.
+        """
+        # Consolidate standard initialization arguments
         init_kwargs = {
             "balancing_strategy": strategy,
             "params": params,
@@ -1116,33 +1388,54 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             "task_type": task_type,
             **kwargs,
         }
+
         return model_cls(**init_kwargs)
 
     @classmethod
     def create_model_from_config(
         cls, config: ModelConfiguration
     ) -> Optional[ModelSpecification]:
-        """Instantiate a model instance from a ModelConfiguration.
-
-        Args:
-            config: Configuration containing model type and parameters.
-
-        Returns:
-            Model instance or None if the type is not resolvable.
         """
-        # Find the corresponding class from the model_type enum
+        Reconstruct a ModelSpecification instance from a configuration object.
+
+        This method acts as a bridge between the serialized results (ModelConfiguration)
+        and the executable logic, enabling the restoration of a specific model
+        setup including its hyperparameters and strategy settings.
+
+        Parameters
+        ----------
+        config : ModelConfiguration
+            The configuration container holding the model type, task definition,
+            and hyperparameter state.
+
+        Returns
+        -------
+        ModelSpecification, optional
+            A concrete model instance (e.g., RandomForest) ready for fitting or
+            prediction. Returns None if the model type cannot be mapped to a class.
+        """
+        # Retrieve the concrete class mapped to the ModelType enum
         model_cls = config.model_type.model_class
 
         if model_cls is not None:
-            # Instantiate using the extracted method
-            return ModelSpecification.instantiate_model(
+            # Re-instantiate using the factory method
+            return cls.instantiate_model(
                 model_cls=model_cls,
                 strategy=config.balancing_strategy,
-                params=config.model_params,  # Assuming this fits the ModelParams type
+                params=config.model_params,
                 cv=config.cv,
                 optimization_strategy=config.optimization_strategy,
                 task_type=config.task_type,
+                scoring=config.scoring,
+                n_jobs=config.n_jobs,
+                n_iter=config.n_iter,
+                max_iter=config.max_iter,
+                acceptable_gap=config.acceptable_gap,
+                large_gap=config.large_gap,
             )
-        else:
-            print(f"Unable to instantiate model class: {model_cls}")
-            return None
+
+        # Log failure if the enum mapping is missing or broken
+        print(
+            f"⚠️ Unable to instantiate model class: ModelType.{config.model_type.name} has no associated class."
+        )
+        return None

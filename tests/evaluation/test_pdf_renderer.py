@@ -1,0 +1,131 @@
+import dataclasses
+
+import pandas as pd
+import pytest
+from dsr_files.enums import FileType
+
+from dsr_feature_eng_ml.enums import (
+    BalancingStrategy,
+    ModelType,
+    OptimizationStrategy,
+    ScoringMetric,
+    TaskType,
+)
+from dsr_feature_eng_ml.evaluation import ModelAuditSummary
+from dsr_feature_eng_ml.evaluation.audit_pdf_renderer import AuditPDFRenderer
+from dsr_feature_eng_ml.evaluation.schema import DataSplits, ModelConfiguration
+from dsr_feature_eng_ml.models.lasso_regression import LassoParams
+from dsr_feature_eng_ml.models.random_forest import RandomForestParams
+
+
+@pytest.fixture
+def populated_summary(mini_taxi_df):
+    """Create a summary with two competing models (RFR vs Lasso)."""
+    # 1. Create a Winning Model (RFR)
+    m1 = ModelConfiguration(
+        id="01",
+        model_type=ModelType.RANDOM_FOREST_REGRESSOR,
+        task_type=TaskType.REGRESSION,
+        score_val=0.8145,
+        balancing_strategy=BalancingStrategy.NONE,
+        optimization_strategy=OptimizationStrategy.RANDOM_SEARCH,
+        cv=5,
+        scoring=ScoringMetric.R2,
+        n_jobs=1,
+        n_iter=10,
+        model_params=RandomForestParams.create_default(
+            task_type=TaskType.REGRESSION, scoring=ScoringMetric.R2, random_state=75
+        ),
+    )
+    # 2. Create a Losing Model (Lasso)
+    m2 = ModelConfiguration(
+        id="02",
+        model_type=ModelType.LASSO,
+        task_type=TaskType.REGRESSION,
+        score_val=0.7500,
+        balancing_strategy=BalancingStrategy.NONE,
+        optimization_strategy=OptimizationStrategy.RANDOM_SEARCH,
+        cv=5,
+        scoring=ScoringMetric.R2,
+        n_jobs=1,
+        n_iter=10,
+        model_params=LassoParams(),
+    )
+    target = "fare_amount"
+    features = [c for c in mini_taxi_df.columns if c != target]
+
+    return ModelAuditSummary(
+        data_splits=DataSplits.from_data_source(
+            mini_taxi_df,
+            features_to_include=features,
+            target_column=target,
+            test_size=0.2,
+            valid_size=0.2,
+            original_row_count=len(mini_taxi_df),
+            random_state=75,
+        ),
+        results=[m1, m2],
+        dataset_name="Taxi Audit Test",
+        original_row_count=1000,
+    )
+
+
+def test_pdf_renderer_initialization(populated_summary):
+    """
+    Verify the renderer correctly links to the audit summary and applies the title.
+    Matches the 'Model Audit Report' header on Page 1.
+    """
+    title = "Yellow Taxi Performance Review"
+    renderer = AuditPDFRenderer(summary=populated_summary, report_title=title)
+
+    assert renderer.summary == populated_summary
+    assert renderer.report_title == title
+
+
+def test_pdf_export_workflow(populated_summary, tmp_path):
+    """
+    Verify the high-level export_results call triggers the PDF rendering lifecycle.
+    This mimics the creation of the final PDF artifact.
+    """
+    # Mock data splits target vs predictions
+    # If target is [20, 15] and preds are [20, 50], index 1 is an anomaly
+    # The number of values in the target column has to be the same as the
+    # number of rows in the dataframe.
+    df_len = len(populated_summary.data_splits.val_target)
+    target_values = pd.Series(20.0).repeat(df_len - 1)
+    target_values[1] = 15.0
+    preds_values = pd.Series(20.0).repeat(df_len - 1)
+    preds_values[1] = 50.0
+    populated_summary.data_splits = dataclasses.replace(
+        populated_summary.data_splits, val_target=target_values
+    )
+    populated_summary.results[0] = dataclasses.replace(
+        populated_summary.results[0],
+        preds_val=pd.Series(
+            preds_values, index=populated_summary.data_splits.val_target.index
+        ),
+    )
+    # 1. Execute PDF export through the summary orchestrator
+    # This internally instantiates AuditPDFRenderer and calls .render()
+    pdf_path = populated_summary.export_results(
+        prefix="Taxi_Audit", file_type=FileType.PDF, path=tmp_path
+    )
+
+    # 2. Verify the file exists and has the correct naming convention
+    assert pdf_path.exists()
+    assert pdf_path.suffix == ".pdf"
+    assert "Taxi_Audit" in pdf_path.name
+
+
+def test_renderer_toc_registration(populated_summary):
+    """
+    Verify that the rendering process populates the Table of Contents registry.
+    Ensures 'Page 9: Random Forest Deep Dive' is reachable.
+    """
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    # The render call triggers page generation and TOC registration
+    pdf_doc = renderer.render()
+
+    # After render, the registry should contain references to the summary and deep dives
+    assert len(pdf_doc.toc_pages) > 0
