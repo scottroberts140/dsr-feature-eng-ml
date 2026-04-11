@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-04-11
+
+### Fixed
+
+* **README links**: Fixed links in README file for Sample Audit PDF and Sample Output.
+
 ## [1.2.1] - 2026-04-11
 
 ### Added
