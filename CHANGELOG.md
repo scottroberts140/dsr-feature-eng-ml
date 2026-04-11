@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-04-11
+
+### Added
+
+* **Sample Audit Artifacts**: Localized a full suite of sample outputs in `docs/artifacts/`, including the **Yellow Taxi Audit PDF**, **Excel Workbook**, and **JSON Snapshot**.
+* **Interactive Audit State**: Provided a 118MB **Joblib** binary as a GitHub Release Asset, allowing users to hydrate and explore the complete `ModelAuditSummary` state from the October 2025 Taxi project.
+* **Audit Documentation Badges**: Updated the README with dynamic status badges and direct links to generated reports for improved feature discoverability.
+
+### Fixed
+
+* **PyPI Metadata Alignment**: Synchronized the PyPI project description with the latest GitHub README to ensure the **Core Capabilities** and **Export Results** sections correctly reflect version 1.2.0's orchestration features.
+
 ## [1.2.0] - 2026-04-11
 
 ### Added

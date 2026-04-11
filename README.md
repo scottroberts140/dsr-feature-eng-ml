@@ -8,7 +8,7 @@
 
 This suite provides a high-fidelity framework for training, evaluating, and auditing machine learning models. It is designed to move beyond simple accuracy metrics, providing deep insights into model generalization, data drift, and hardware efficiency.
 
-**Version 1.2.0**: This release adds new defaults and incremental improvements while remaining compatible with 1.2.0.
+**Version 1.2.1**: This release adds sample audit artifacts and an interactive audit state, while remaining compatible with 1.2.0.
 
 **Release scope**: Regression workflows have been tested. Classification workflows are implemented but not yet tested; a follow-up release will expand validation and coverage.
 
