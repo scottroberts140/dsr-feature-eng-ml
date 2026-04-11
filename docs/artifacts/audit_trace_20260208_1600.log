@@ -1,0 +1,121 @@
+Auditing RANDOM_FOREST_REGRESSOR with NONE... Tune
+⚠️ Dataset size (3,542,825) exceeds tuning safety limit.
+📉 Sampling 500,000 rows (14.1%) for optimization phase...
+Available:           12.77GB
+Dataset:             0.04GB
+Model multiplier:    15.0x
+n_jobs:              2
+Concurrent workers:  2
+Total fits:          25
+Candidates:          5
+Storage overhead:    4.25GB
+Estimated Peak:      5.39GB
+Risk:                No
+Risk: No | Estimated peak: 5.39GB | Available: 12.77GB
+Fitting 5 folds for each of 5 candidates, totalling 25 fits
+Final fit with score_cv=0.6905
+Auditing DECISION_TREE_REGRESSOR with NONE... Tune
+⚠️ Dataset size (3,542,825) exceeds tuning safety limit.
+📉 Sampling 500,000 rows (14.1%) for optimization phase...
+Available:           11.69GB
+Dataset:             0.04GB
+Model multiplier:    3.0x
+n_jobs:              2
+Concurrent workers:  2
+Total fits:          15
+Candidates:          3
+Storage overhead:    2.55GB
+Estimated Peak:      2.81GB
+Risk:                No
+Risk: No | Estimated peak: 2.81GB | Available: 11.69GB
+Fitting 5 folds for each of 3 candidates, totalling 15 fits
+Final fit with score_cv=0.6348
+Auditing LINEAR_REGRESSION with NONE... Tune
+⚠️ Dataset size (3,542,825) exceeds tuning safety limit.
+📉 Sampling 500,000 rows (14.1%) for optimization phase...
+Available:           11.23GB
+Dataset:             0.04GB
+Model multiplier:    3.0x
+n_jobs:              2
+Concurrent workers:  2
+Total fits:          5
+Candidates:          1
+Storage overhead:    0.85GB
+Estimated Peak:      1.11GB
+Risk:                No
+Risk: No | Estimated peak: 1.11GB | Available: 11.23GB
+Fitting 5 folds for each of 1 candidates, totalling 5 fits
+Final fit with score_cv=0.4954
+Auditing ELASTIC_NET with NONE... Tune
+⚠️ Dataset size (3,542,825) exceeds tuning safety limit.
+📉 Sampling 500,000 rows (14.1%) for optimization phase...
+Available:           11.27GB
+Dataset:             0.04GB
+Model multiplier:    3.0x
+n_jobs:              2
+Concurrent workers:  2
+Total fits:          5
+Candidates:          1
+Storage overhead:    0.85GB
+Estimated Peak:      1.11GB
+Risk:                No
+Risk: No | Estimated peak: 1.11GB | Available: 11.27GB
+Fitting 5 folds for each of 1 candidates, totalling 5 fits
+Final fit with score_cv=0.4251
+Auditing RIDGE with NONE... Tune
+⚠️ Dataset size (3,542,825) exceeds tuning safety limit.
+📉 Sampling 500,000 rows (14.1%) for optimization phase...
+Available:           11.29GB
+Dataset:             0.04GB
+Model multiplier:    3.0x
+n_jobs:              2
+Concurrent workers:  2
+Total fits:          5
+Candidates:          1
+Storage overhead:    0.85GB
+Estimated Peak:      1.11GB
+Risk:                No
+Risk: No | Estimated peak: 1.11GB | Available: 11.29GB
+Fitting 5 folds for each of 1 candidates, totalling 5 fits
+Final fit with score_cv=0.4954
+Auditing LASSO with NONE... Tune
+⚠️ Dataset size (3,542,825) exceeds tuning safety limit.
+📉 Sampling 500,000 rows (14.1%) for optimization phase...
+Available:           11.27GB
+Dataset:             0.04GB
+Model multiplier:    3.0x
+n_jobs:              2
+Concurrent workers:  2
+Total fits:          5
+Candidates:          1
+Storage overhead:    0.85GB
+Estimated Peak:      1.11GB
+Risk:                No
+Risk: No | Estimated peak: 1.11GB | Available: 11.27GB
+Fitting 5 folds for each of 1 candidates, totalling 5 fits
+Final fit with score_cv=0.4821
+
+--- Phase 1: Taxi Fare Base Audit Completed ---
+
+--- Audit Snapshot: 20260208_1600 ---
+Timestamp:              20260208_1600
+Train/Val/Test Rows:    2,834,260 / 708,565 / 885,707
+Total Duration:         674.5272295849863
+Peak RAM:               4440932352
+    Features:
+    DOLocationID         passenger_count      PULocationID
+    dropoff_dayofweek    payment_type         RatecodeID
+    dropoff_hour         pickup_dayofweek     trip_distance
+    dropoff_hour_cos     pickup_hour          VendorID
+    dropoff_hour_sin     pickup_hour_cos
+    fare_amount          pickup_hour_sin
+----------------------------------------------------------------------------------------------------
+ID                   Model  Val Score  Cleaned Score      Gap   Status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          Efficiency
+01 Random Forest Regressor   0.763487       0.768811 0.006358 Well-Fit                                                                                  <bound method ModelConfiguration.efficiency of ModelConfiguration(id='01', model_type=<ModelType.RANDOM_FOREST_REGRESSOR: 'Random Forest Regressor'>, task_type=<TaskType.REGRESSION: 'Regression'>, balancing_strategy=<BalancingStrategy.NONE: 'None'>, optimization_strategy=<OptimizationStrategy.RANDOM_SEARCH: 'Random Search'>, model_params=RandomForestParams(random_state=75, optimization_strategy=<OptimizationStrategy.RANDOM_SEARCH: 'Random Search'>, criterion='squared_error', max_depth=20, n_estimators=50, min_samples_split=2, min_samples_leaf=5, max_features=1.0, bootstrap=True, task_type=<TaskType.REGRESSION: 'Regression'>, scoring=<ScoringMetric.R2: 'r2'>, class_weight=None), cv=5, scoring=<ScoringMetric.R2: 'r2'>, n_jobs=2, n_iter=5, max_iter=1000, has_val_set_evaluation_scores=True, has_test_set_evaluation_scores=False, use_combined_data=True, score_cv=np.float64(0.6905153139531055), score_train=0.7571297065412907, score_val=0.7634874540057005, score_val_cleaned=0.76881051381064, score_test=None, mae_train=4.423166128216528, mae_val=4.428094647460226, mae_test=None, mse_train=94.08733187107956, mse_val=92.18442103262731, mse_test=None, r2_train=0.7571297065412907, r2_val=0.7634874540057005, r2_val_cleaned=0.76881051381064, r2_test=None, accuracy_train=None, accuracy_val=None, accuracy_val_cleaned=None, accuracy_test=None, preds_val=3114722    13.240960\n3075265    17.520166\n435174     19.693592\n729314     21.100768\n2860481    13.368838\n             ...    \n1432993    47.630662\n4302195     5.764854\n266047     17.353231\n891014      9.954316\n272246     13.005637\nLength: 708565, dtype: float64, probs_val=None, preds_test=None, probs_test=None, acceptable_gap=0.02, large_gap=0.05, feature_analysis=<dsr_feature_eng_ml.evaluation.schema.ModelFeatureImportance object at 0x11dc4cc20>, tuning_duration=399.7078233330103, fit_duration=255.42804012499982, available_gb=13716422656, used_gb=-190742528, estimated_peak_gb=np.float64(5788374696.0), actual_peak_gb=2728181760, memory_risk_triggered=np.False_, sampling_factor=0.14113031267420773, concurrent_workers=2, model_multiplier=15.0, num_candidates=1, filter_outliers=False, outlier_count=5, efficiency_threshold=50000, train_mean=18.246126174926758, train_std=19.682418823242188, train_median=13.5, train_skew=2.5440969467163086, train_kurtosis=54.257999420166016, val_mean=18.296228408813477, val_std=19.74249267578125, val_median=13.5, val_skew=2.718412399291992, val_kurtosis=44.01705551147461, test_mean=0.0, test_std=0.0, test_median=0.0, test_skew=0.0, test_kurtosis=0.0, mean_delta=np.float64(0.072972140052595), std_delta=0.30521580237955137, quality_score=97.33847009753023, drift_index=0.002745910743266022)>
+02 Decision Tree Regressor   0.705564       0.710764 0.010347 Well-Fit <bound method ModelConfiguration.efficiency of ModelConfiguration(id='02', model_type=<ModelType.DECISION_TREE_REGRESSOR: 'Decision Tree Regressor'>, task_type=<TaskType.REGRESSION: 'Regression'>, balancing_strategy=<BalancingStrategy.NONE: 'None'>, optimization_strategy=<OptimizationStrategy.RANDOM_SEARCH: 'Random Search'>, model_params=DecisionTreeParams(random_state=75, optimization_strategy=<OptimizationStrategy.RANDOM_SEARCH: 'Random Search'>, criterion='squared_error', splitter='best', max_depth=10, min_samples_split=2, min_samples_leaf=1, min_weight_fraction_leaf=0.0, max_features=None, max_leaf_nodes=None, min_impurity_decrease=0.0, class_weight=None, ccp_alpha=0.0, task_type=<TaskType.REGRESSION: 'Regression'>, scoring=<ScoringMetric.R2: 'r2'>), cv=5, scoring=<ScoringMetric.R2: 'r2'>, n_jobs=2, n_iter=3, max_iter=1000, has_val_set_evaluation_scores=True, has_test_set_evaluation_scores=False, use_combined_data=True, score_cv=np.float64(0.6348220475981213), score_train=0.695216994835858, score_val=0.7055638171814418, score_val_cleaned=0.7107638588328486, score_test=None, mae_train=5.245666740102517, mae_val=5.248843636979698, mae_test=None, mse_train=118.07215838201661, mse_val=114.76105392244091, mse_test=None, r2_train=0.695216994835858, r2_val=0.7055638171814418, r2_val_cleaned=0.7107638588328486, r2_test=None, accuracy_train=None, accuracy_val=None, accuracy_val_cleaned=None, accuracy_test=None, preds_val=3114722    10.166501\n3075265    18.138139\n435174     18.138139\n729314     22.591521\n2860481    14.358714\n             ...    \n1432993    45.230498\n4302195     8.685706\n266047     18.882407\n891014     13.048612\n272246     13.048612\nLength: 708565, dtype: float64, probs_val=None, preds_test=None, probs_test=None, acceptable_gap=0.02, large_gap=0.05, feature_analysis=<dsr_feature_eng_ml.evaluation.schema.ModelFeatureImportance object at 0x11dbaf750>, tuning_duration=8.172799749998376, fit_duration=7.493927542003803, available_gb=12554043392, used_gb=369131520, estimated_peak_gb=np.float64(3014648219.2), actual_peak_gb=3965976576, memory_risk_triggered=np.False_, sampling_factor=0.14113031267420773, concurrent_workers=2, model_multiplier=3.0, num_candidates=1, filter_outliers=False, outlier_count=5, efficiency_threshold=50000, train_mean=18.246126174926758, train_std=19.682418823242188, train_median=13.5, train_skew=2.5440969467163086, train_kurtosis=54.257999420166016, val_mean=18.296228408813477, val_std=19.74249267578125, val_median=13.5, val_skew=2.718412399291992, val_kurtosis=44.01705551147461, test_mean=0.0, test_std=0.0, test_median=0.0, test_skew=0.0, test_kurtosis=0.0, mean_delta=np.float64(0.07074176958332046), std_delta=0.30521580237955137, quality_score=97.39997917429658, drift_index=0.002745910743266022)>
+05        Ridge Regression   0.496932       0.503267 0.004398 Well-Fit                                                                                                                                                                                                  <bound method ModelConfiguration.efficiency of ModelConfiguration(id='05', model_type=<ModelType.RIDGE: 'Ridge Regression'>, task_type=<TaskType.REGRESSION: 'Regression'>, balancing_strategy=<BalancingStrategy.NONE: 'None'>, optimization_strategy=<OptimizationStrategy.RANDOM_SEARCH: 'Random Search'>, model_params=RidgeParams(random_state=1, optimization_strategy=<OptimizationStrategy.MANUAL: 'Manual'>, alpha=1.0, fit_intercept=True, copy_X=True, max_iter=None, tol=0.0001, solver='auto', task_type=<TaskType.REGRESSION: 'Regression'>, scoring=<ScoringMetric.R2: 'r2'>), cv=5, scoring=<ScoringMetric.R2: 'r2'>, n_jobs=2, n_iter=1, max_iter=1000, has_val_set_evaluation_scores=True, has_test_set_evaluation_scores=False, use_combined_data=True, score_cv=np.float64(0.4953526273045722), score_train=0.4925341811087811, score_val=0.49693228602978323, score_val_cleaned=0.5032673767205932, score_test=None, mae_train=6.639519825857257, mae_val=6.65492375224307, mae_test=None, mse_train=196.59096316513754, mse_val=196.07841840943834, mse_test=None, r2_train=0.4925341811087811, r2_val=0.49693228602978323, r2_val_cleaned=0.5032673767205932, r2_test=None, accuracy_train=None, accuracy_val=None, accuracy_val_cleaned=None, accuracy_test=None, preds_val=3114722    10.153055\n3075265    14.354752\n435174     18.907622\n729314     15.902902\n2860481    12.646774\n             ...    \n1432993    39.522115\n4302195    12.950787\n266047     15.708825\n891014     12.099421\n272246     12.781218\nLength: 708565, dtype: float64, probs_val=None, preds_test=None, probs_test=None, acceptable_gap=0.02, large_gap=0.05, feature_analysis=<dsr_feature_eng_ml.evaluation.schema.ModelFeatureImportance object at 0x1447ac3e0>, tuning_duration=0.525659708015155, fit_duration=0.2998044169798959, available_gb=12122587136, used_gb=0, estimated_peak_gb=np.float64(1189287118.4), actual_peak_gb=4435804160, memory_risk_triggered=np.False_, sampling_factor=0.14113031267420773, concurrent_workers=2, model_multiplier=3.0, num_candidates=1, filter_outliers=False, outlier_count=5, efficiency_threshold=50000, train_mean=18.246126174926758, train_std=19.682418823242188, train_median=13.5, train_skew=2.5440969467163086, train_kurtosis=54.257999420166016, val_mean=18.296228408813477, val_std=19.74249267578125, val_median=13.5, val_skew=2.718412399291992, val_kurtosis=44.01705551147461, test_mean=0.0, test_std=0.0, test_median=0.0, test_skew=0.0, test_kurtosis=0.0, mean_delta=np.float64(0.0015796587252110417), std_delta=0.30521580237955137, quality_score=96.83245465459503, drift_index=0.002745910743266022)>
+03       Linear Regression   0.496932       0.503267 0.004398 Well-Fit                                                                                                                                                                                         <bound method ModelConfiguration.efficiency of ModelConfiguration(id='03', model_type=<ModelType.LINEAR_REGRESSION: 'Linear Regression'>, task_type=<TaskType.REGRESSION: 'Regression'>, balancing_strategy=<BalancingStrategy.NONE: 'None'>, optimization_strategy=<OptimizationStrategy.RANDOM_SEARCH: 'Random Search'>, model_params=LinearRegressionParams(random_state=1, optimization_strategy=<OptimizationStrategy.MANUAL: 'Manual'>, fit_intercept=True, copy_X=True, n_jobs=None, positive=False, task_type=<TaskType.REGRESSION: 'Regression'>, scoring=<ScoringMetric.R2: 'r2'>), cv=5, scoring=<ScoringMetric.R2: 'r2'>, n_jobs=2, n_iter=1, max_iter=1000, has_val_set_evaluation_scores=True, has_test_set_evaluation_scores=False, use_combined_data=True, score_cv=np.float64(0.49535262283576476), score_train=0.49253418154177486, score_val=0.4969322843200239, score_val_cleaned=0.5032673762472093, score_test=None, mae_train=6.639519006008072, mae_val=6.65492301720706, mae_test=None, mse_train=196.59096299739684, mse_val=196.0784190758435, mse_test=None, r2_train=0.49253418154177486, r2_val=0.4969322843200239, r2_val_cleaned=0.5032673762472093, r2_test=None, accuracy_train=None, accuracy_val=None, accuracy_val_cleaned=None, accuracy_test=None, preds_val=3114722    10.153045\n3075265    14.354748\n435174     18.907630\n729314     15.902904\n2860481    12.646787\n             ...    \n1432993    39.522087\n4302195    12.950809\n266047     15.708796\n891014     12.099404\n272246     12.781190\nLength: 708565, dtype: float64, probs_val=None, preds_test=None, probs_test=None, acceptable_gap=0.02, large_gap=0.05, feature_analysis=<dsr_feature_eng_ml.evaluation.schema.ModelFeatureImportance object at 0x11dbafd90>, tuning_duration=0.6312242919811979, fit_duration=0.48993341700406745, available_gb=12054675456, used_gb=368476160, estimated_peak_gb=np.float64(1189287118.4), actual_peak_gb=4419993600, memory_risk_triggered=np.False_, sampling_factor=0.14113031267420773, concurrent_workers=2, model_multiplier=3.0, num_candidates=1, filter_outliers=False, outlier_count=5, efficiency_threshold=50000, train_mean=18.246126174926758, train_std=19.682418823242188, train_median=13.5, train_skew=2.5440969467163086, train_kurtosis=54.257999420166016, val_mean=18.296228408813477, val_std=19.74249267578125, val_median=13.5, val_skew=2.718412399291992, val_kurtosis=44.01705551147461, test_mean=0.0, test_std=0.0, test_median=0.0, test_skew=0.0, test_kurtosis=0.0, mean_delta=np.float64(0.0015796614842591428), std_delta=0.30521580237955137, quality_score=96.8324540364073, drift_index=0.002745910743266022)>
+06        Lasso Regression   0.483207       0.488716 0.003961 Well-Fit                                                                                                                                        <bound method ModelConfiguration.efficiency of ModelConfiguration(id='06', model_type=<ModelType.LASSO: 'Lasso Regression'>, task_type=<TaskType.REGRESSION: 'Regression'>, balancing_strategy=<BalancingStrategy.NONE: 'None'>, optimization_strategy=<OptimizationStrategy.RANDOM_SEARCH: 'Random Search'>, model_params=LassoParams(random_state=1, optimization_strategy=<OptimizationStrategy.MANUAL: 'Manual'>, alpha=1.0, fit_intercept=True, copy_X=True, precompute=False, max_iter=1000, tol=0.0001, warm_start=False, positive=False, selection='cyclic', task_type=<TaskType.REGRESSION: 'Regression'>, scoring=<ScoringMetric.R2: 'r2'>), cv=5, scoring=<ScoringMetric.R2: 'r2'>, n_jobs=2, n_iter=1, max_iter=1000, has_val_set_evaluation_scores=True, has_test_set_evaluation_scores=False, use_combined_data=True, score_cv=np.float64(0.4821342747042599), score_train=0.4792468549189154, score_val=0.4832074975783498, score_val_cleaned=0.48871577880310857, score_test=None, mae_train=6.868911912957562, mae_val=6.879718978866209, mae_test=None, mse_train=201.738439421297, mse_val=201.42786687895497, mse_test=None, r2_train=0.4792468549189154, r2_val=0.4832074975783498, r2_val_cleaned=0.48871577880310857, r2_test=None, accuracy_train=None, accuracy_val=None, accuracy_val_cleaned=None, accuracy_test=None, preds_val=3114722    11.398196\n3075265    15.695577\n435174     16.458348\n729314     17.690754\n2860481    13.456844\n             ...    \n1432993    37.217423\n4302195    15.397460\n266047     15.301337\n891014     12.376266\n272246     12.707241\nLength: 708565, dtype: float64, probs_val=None, preds_test=None, probs_test=None, acceptable_gap=0.02, large_gap=0.05, feature_analysis=<dsr_feature_eng_ml.evaluation.schema.ModelFeatureImportance object at 0x11dc9ec30>, tuning_duration=0.5180745830002706, fit_duration=0.34154808399034664, available_gb=12099207168, used_gb=0, estimated_peak_gb=np.float64(1189287118.4), actual_peak_gb=4440932352, memory_risk_triggered=np.False_, sampling_factor=0.14113031267420773, concurrent_workers=2, model_multiplier=3.0, num_candidates=1, filter_outliers=False, outlier_count=5, efficiency_threshold=50000, train_mean=18.246126174926758, train_std=19.682418823242188, train_median=13.5, train_skew=2.5440969467163086, train_kurtosis=54.257999420166016, val_mean=18.296228408813477, val_std=19.74249267578125, val_median=13.5, val_skew=2.718412399291992, val_kurtosis=44.01705551147461, test_mean=0.0, test_std=0.0, test_median=0.0, test_skew=0.0, test_kurtosis=0.0, mean_delta=np.float64(0.0010732228740898964), std_delta=0.30521580237955137, quality_score=97.24585938762061, drift_index=0.002745910743266022)>
+04             Elastic Net   0.425272       0.429798 0.002087 Well-Fit                                                                                                                                   <bound method ModelConfiguration.efficiency of ModelConfiguration(id='04', model_type=<ModelType.ELASTIC_NET: 'Elastic Net'>, task_type=<TaskType.REGRESSION: 'Regression'>, balancing_strategy=<BalancingStrategy.NONE: 'None'>, optimization_strategy=<OptimizationStrategy.RANDOM_SEARCH: 'Random Search'>, model_params=ElasticNetParams(random_state=1, optimization_strategy=<OptimizationStrategy.MANUAL: 'Manual'>, alpha=1.0, l1_ratio=0.5, fit_intercept=True, copy_X=True, max_iter=1000, tol=0.0001, warm_start=False, positive=False, selection='cyclic', task_type=<TaskType.REGRESSION: 'Regression'>, scoring=<ScoringMetric.R2: 'r2'>), cv=5, scoring=<ScoringMetric.R2: 'r2'>, n_jobs=2, n_iter=1, max_iter=1000, has_val_set_evaluation_scores=True, has_test_set_evaluation_scores=False, use_combined_data=True, score_cv=np.float64(0.4251018260113472), score_train=0.4231848708321575, score_val=0.4252719860070797, score_val_cleaned=0.42979827526984127, score_test=None, mae_train=8.193797331632073, mae_val=8.213150372620866, mae_test=None, mse_train=223.45670898405328, mse_val=224.00912813498718, mse_test=None, r2_train=0.4231848708321575, r2_val=0.4252719860070797, r2_val_cleaned=0.42979827526984127, r2_test=None, accuracy_train=None, accuracy_val=None, accuracy_val_cleaned=None, accuracy_test=None, preds_val=3114722    13.284970\n3075265    15.931542\n435174     19.098579\n729314     18.283579\n2860481    15.046706\n             ...    \n1432993    31.284207\n4302195    15.422067\n266047     16.221119\n891014     13.666224\n272246     14.383500\nLength: 708565, dtype: float64, probs_val=None, preds_test=None, probs_test=None, acceptable_gap=0.02, large_gap=0.05, feature_analysis=<dsr_feature_eng_ml.evaluation.schema.ModelFeatureImportance object at 0x11dc76650>, tuning_duration=0.5352854170196224, fit_duration=0.38310891698347405, available_gb=12102025216, used_gb=0, estimated_peak_gb=np.float64(1189287118.4), actual_peak_gb=4430020608, memory_risk_triggered=np.False_, sampling_factor=0.14113031267420773, concurrent_workers=2, model_multiplier=3.0, num_candidates=1, filter_outliers=False, outlier_count=5, efficiency_threshold=50000, train_mean=18.246126174926758, train_std=19.682418823242188, train_median=13.5, train_skew=2.5440969467163086, train_kurtosis=54.257999420166016, val_mean=18.296228408813477, val_std=19.74249267578125, val_median=13.5, val_skew=2.718412399291992, val_kurtosis=44.01705551147461, test_mean=0.0, test_std=0.0, test_median=0.0, test_skew=0.0, test_kurtosis=0.0, mean_delta=np.float64(0.00017015999573249951), std_delta=0.30521580237955137, quality_score=97.73685536861922, drift_index=0.002745910743266022)>
+Full Audit Snapshot saved: Output/20260208_1600/Audit_State_20260208_1600.joblib
+--- Audit Trace Saved to audit_trace_20260208_1600.log ---

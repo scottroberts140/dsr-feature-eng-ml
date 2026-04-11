@@ -4,6 +4,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/dsr-feature-eng-ml.svg?cacheSeconds=300)](https://pypi.org/project/dsr-feature-eng-ml/)
 [![License](https://img.shields.io/pypi/l/dsr-feature-eng-ml.svg?cacheSeconds=300)](https://pypi.org/project/dsr-feature-eng-ml/)
 [![Changelog](https://img.shields.io/badge/changelog-available-blue.svg)](https://github.com/scottroberts140/dsr-feature-eng-ml/releases)
+[![Sample Audit PDF](https://img.shields.io/badge/Audit-Sample_Report-blue.svg)](docs/artifacts/Taxi_Audit_20260208_1600.pdf)
 
 This suite provides a high-fidelity framework for training, evaluating, and auditing machine learning models. It is designed to move beyond simple accuracy metrics, providing deep insights into model generalization, data drift, and hardware efficiency.
 
@@ -17,7 +18,7 @@ This suite provides a high-fidelity framework for training, evaluating, and audi
 * **Statistical Drift Analysis**: Automatically calculates mean and standard deviation deltas, skewness, and kurtosis across train/val/test splits to identify data inconsistency.
 * **Intelligent Resampling**: Features exact balancing strategies for classification tasks, ensuring minority and majority classes are perfectly aligned during training.
 * **Memory-Safe Operations**: Includes predictive memory auditing to prevent Out-of-Memory (OOM) errors during large-scale tuning and a side-car serialization strategy for handling massive prediction arrays.
-* **Comprehensive Reporting**: Generates multi-page PDF audit reports featuring leaderboards, deep-dive residual analysis, and feature importance visualizations.
+* **Comprehensive Reporting**: Generates multi-page PDF audit reports featuring leaderboards, deep-dive residual analysis, and feature importance visualizations. [![View Sample PDF Report]](docs/artifacts/Taxi_Audit_20260208_1600.pdf)
 
 ## Multi-Format Export Capabilities
 
@@ -28,6 +29,7 @@ The ModelAuditor provides a robust export engine via the ModelAuditSummary class
 * **Excel Workbook**: Creates a multi-sheet report containing the Audit Summary (metadata), the Leaderboard (performance results), an Anomaly Log (outlier data), and comprehensive Feature Metadata.
 * **JSON Payload**: Exports a serializable, nested dictionary containing the complete audit snapshot, metadata, and per-model results, suitable for web integration or programmatic review.
 * **CSV Collection**: Produces a set of tabular files for flat-file analysis, including distinct files for the leaderboard results, metadata summary, anomaly data, and dynamic feature context.
+[![Sample Output]](docs/artifacts/)
 
 ## Audit Metrics Definitions
 
