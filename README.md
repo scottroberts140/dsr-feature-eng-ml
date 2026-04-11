@@ -4,11 +4,11 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/dsr-feature-eng-ml.svg?cacheSeconds=300)](https://pypi.org/project/dsr-feature-eng-ml/)
 [![License](https://img.shields.io/pypi/l/dsr-feature-eng-ml.svg?cacheSeconds=300)](https://pypi.org/project/dsr-feature-eng-ml/)
 [![Changelog](https://img.shields.io/badge/changelog-available-blue.svg)](https://github.com/scottroberts140/dsr-feature-eng-ml/releases)
-[![Sample Audit PDF](https://img.shields.io/badge/Audit-Sample_Report-blue.svg)](docs/artifacts/Taxi%20-%20202510_20260208_1600.pdf)
+[![Sample Audit PDF](https://img.shields.io/badge/Audit-Sample_Report-blue.svg)](https://github.com/scottroberts140/dsr-feature-eng-ml/blob/main/docs/artifacts/Taxi%20-%20202510_20260208_1600.pdf)
 
 This suite provides a high-fidelity framework for training, evaluating, and auditing machine learning models. It is designed to move beyond simple accuracy metrics, providing deep insights into model generalization, data drift, and hardware efficiency.
 
-**Version 1.2.2**: This release adds sample audit artifacts and an interactive audit state, while remaining compatible with 1.2.1.
+**Version 1.2.3**: This release adds sample audit artifacts and an interactive audit state, while remaining compatible with 1.2.2.
 
 **Release scope**: Regression workflows have been tested. Classification workflows are implemented but not yet tested; a follow-up release will expand validation and coverage.
 
@@ -18,7 +18,7 @@ This suite provides a high-fidelity framework for training, evaluating, and audi
 * **Statistical Drift Analysis**: Automatically calculates mean and standard deviation deltas, skewness, and kurtosis across train/val/test splits to identify data inconsistency.
 * **Intelligent Resampling**: Features exact balancing strategies for classification tasks, ensuring minority and majority classes are perfectly aligned during training.
 * **Memory-Safe Operations**: Includes predictive memory auditing to prevent Out-of-Memory (OOM) errors during large-scale tuning and a side-car serialization strategy for handling massive prediction arrays.
-* **Comprehensive Reporting**: Generates multi-page PDF audit reports featuring leaderboards, deep-dive residual analysis, and feature importance visualizations. [[View Sample PDF Report]](docs/artifacts/Taxi_Audit_20260208_1600.pdf)
+* **Comprehensive Reporting**: Generates multi-page PDF audit reports featuring leaderboards, deep-dive residual analysis, and feature importance visualizations. [[View Sample PDF Report]](https://github.com/scottroberts140/dsr-feature-eng-ml/blob/main/docs/artifacts/Taxi%20-%20202510_20260208_1600.pdf)
 
 ## Multi-Format Export Capabilities
 
@@ -29,7 +29,7 @@ The ModelAuditor provides a robust export engine via the ModelAuditSummary class
 * **Excel Workbook**: Creates a multi-sheet report containing the Audit Summary (metadata), the Leaderboard (performance results), an Anomaly Log (outlier data), and comprehensive Feature Metadata.
 * **JSON Payload**: Exports a serializable, nested dictionary containing the complete audit snapshot, metadata, and per-model results, suitable for web integration or programmatic review.
 * **CSV Collection**: Produces a set of tabular files for flat-file analysis, including distinct files for the leaderboard results, metadata summary, anomaly data, and dynamic feature context.
-[[Sample Output]](docs/artifacts/)
+[[Sample Output]](https://github.com/scottroberts140/dsr-feature-eng-ml/tree/main/docs/artifacts)
 
 ## Audit Metrics Definitions
 
