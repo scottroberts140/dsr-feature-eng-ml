@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Optional, Type, cast, get_args
 
@@ -145,13 +146,28 @@ class DecisionTree(
         n_iter: int = -1,
         acceptable_gap: float = prefs.acceptable_gap,
         large_gap: float = prefs.large_gap,
-        scoring: ScoringMetric = ScoringMetric.F1,
+        scoring: Optional[ScoringMetric] = None,
         optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
     ):
+        resolved_scoring = scoring or (
+            ScoringMetric.R2
+            if task_type == TaskType.REGRESSION
+            else ScoringMetric.F1
+        )
+
         if params is None:
             params = DecisionTreeParams.create_default(
-                task_type=task_type, scoring=scoring, random_state=1
+                task_type=task_type, scoring=resolved_scoring, random_state=1
             )
+        else:
+            if params.task_type != task_type or (
+                scoring is not None and params.scoring != resolved_scoring
+            ):
+                params = dataclasses.replace(
+                    params,
+                    task_type=task_type,
+                    scoring=resolved_scoring,
+                )
 
         self._model_dials = params
         self._task_type = self.model_dials.task_type
@@ -236,4 +252,82 @@ class DecisionTree(
         crit = p.criterion if p.criterion in get_args(DTCriterion) else "gini"
         return DecisionTreeClassifier(
             criterion=cast(DTCriterion, crit), class_weight=p.class_weight, **common
+        )
+
+
+class DecisionTreeClassifierModel(DecisionTree):
+    """Task-specific decision tree wrapper for classification models."""
+
+    def __init__(
+        self,
+        cv: Optional[int],
+        balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
+        params: Optional[DecisionTreeParams] = None,
+        task_type: TaskType = TaskType.CLASSIFICATION,
+        n_jobs: int = 3,
+        n_iter: int = -1,
+        acceptable_gap: float = prefs.acceptable_gap,
+        large_gap: float = prefs.large_gap,
+        scoring: ScoringMetric = ScoringMetric.F1,
+        optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
+    ):
+        if task_type != TaskType.CLASSIFICATION:
+            raise ValueError(
+                "DecisionTreeClassifierModel only supports TaskType.CLASSIFICATION"
+            )
+        if params is not None and params.task_type != TaskType.CLASSIFICATION:
+            raise ValueError(
+                "DecisionTreeClassifierModel requires params.task_type == TaskType.CLASSIFICATION"
+            )
+
+        super().__init__(
+            cv=cv,
+            balancing_strategy=balancing_strategy,
+            params=params,
+            task_type=TaskType.CLASSIFICATION,
+            n_jobs=n_jobs,
+            n_iter=n_iter,
+            acceptable_gap=acceptable_gap,
+            large_gap=large_gap,
+            scoring=scoring,
+            optimization_strategy=optimization_strategy,
+        )
+
+
+class DecisionTreeRegressorModel(DecisionTree):
+    """Task-specific decision tree wrapper for regression models."""
+
+    def __init__(
+        self,
+        cv: Optional[int],
+        balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
+        params: Optional[DecisionTreeParams] = None,
+        task_type: TaskType = TaskType.REGRESSION,
+        n_jobs: int = 3,
+        n_iter: int = -1,
+        acceptable_gap: float = prefs.acceptable_gap,
+        large_gap: float = prefs.large_gap,
+        scoring: ScoringMetric = ScoringMetric.R2,
+        optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
+    ):
+        if task_type != TaskType.REGRESSION:
+            raise ValueError(
+                "DecisionTreeRegressorModel only supports TaskType.REGRESSION"
+            )
+        if params is not None and params.task_type != TaskType.REGRESSION:
+            raise ValueError(
+                "DecisionTreeRegressorModel requires params.task_type == TaskType.REGRESSION"
+            )
+
+        super().__init__(
+            cv=cv,
+            balancing_strategy=balancing_strategy,
+            params=params,
+            task_type=TaskType.REGRESSION,
+            n_jobs=n_jobs,
+            n_iter=n_iter,
+            acceptable_gap=acceptable_gap,
+            large_gap=large_gap,
+            scoring=scoring,
+            optimization_strategy=optimization_strategy,
         )

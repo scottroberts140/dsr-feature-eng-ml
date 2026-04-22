@@ -241,23 +241,29 @@ class ModelType(Enum):
         """
         # (The match statement implementation remains the same,
         # returning None for unimplemented models)
-        from dsr_feature_eng_ml.models.decision_tree import DecisionTree
+        from dsr_feature_eng_ml.models.decision_tree import (
+            DecisionTreeClassifierModel,
+            DecisionTreeRegressorModel,
+        )
         from dsr_feature_eng_ml.models.elastic_net_regression import (
             ElasticNetRegression,
         )
         from dsr_feature_eng_ml.models.lasso_regression import LassoRegression
         from dsr_feature_eng_ml.models.linear_regression import LinearRegression
         from dsr_feature_eng_ml.models.logistic_regression import LogisticRegression
-        from dsr_feature_eng_ml.models.random_forest import RandomForest
+        from dsr_feature_eng_ml.models.random_forest import (
+            RandomForestClassifierModel,
+            RandomForestRegressorModel,
+        )
         from dsr_feature_eng_ml.models.ridge_regression import RidgeRegression
 
         match self:
             case ModelType.LINEAR_REGRESSION:
                 return LinearRegression
             case ModelType.RANDOM_FOREST_REGRESSOR:
-                return RandomForest
+                return RandomForestRegressorModel
             case ModelType.DECISION_TREE_REGRESSOR:
-                return DecisionTree
+                return DecisionTreeRegressorModel
             case ModelType.RIDGE:
                 return RidgeRegression
             case ModelType.LASSO:
@@ -267,9 +273,9 @@ class ModelType(Enum):
             case ModelType.LOGISTIC_REGRESSION:
                 return LogisticRegression
             case ModelType.RANDOM_FOREST_CLASSIFIER:
-                return RandomForest
+                return RandomForestClassifierModel
             case ModelType.DECISION_TREE_CLASSIFIER:
-                return DecisionTree
+                return DecisionTreeClassifierModel
 
         return None
 
