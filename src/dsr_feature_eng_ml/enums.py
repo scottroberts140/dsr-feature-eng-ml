@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, StrEnum, auto
-from typing import TYPE_CHECKING, Any, Dict, Optional, Type
+from typing import TYPE_CHECKING, Any, Optional, Type
 
 if TYPE_CHECKING:
     from dsr_feature_eng_ml.models import ModelSpecification
@@ -369,11 +369,11 @@ class ModelTypeData:
 
         match sort_order:
             case ModelEnumSortOrder.NAME:
-                mtd_list = sorted(model_list, key=lambda mtd: (mtd.name))
+                mtd_list = sorted(model_list, key=lambda mtd: mtd.name)
             case ModelEnumSortOrder.VALUE:
-                mtd_list = sorted(model_list, key=lambda mtd: (mtd.value))
+                mtd_list = sorted(model_list, key=lambda mtd: mtd.value)
             case ModelEnumSortOrder.ABBREV:
-                mtd_list = sorted(model_list, key=lambda mtd: (mtd.abbrev))
+                mtd_list = sorted(model_list, key=lambda mtd: mtd.abbrev)
             case ModelEnumSortOrder.TASK_TYPE_NAME:
                 mtd_list = sorted(
                     model_list, key=lambda mtd: (mtd.task_type.sort_order, mtd.name)
@@ -383,7 +383,7 @@ class ModelTypeData:
                     model_list, key=lambda mtd: (mtd.task_type.sort_order, mtd.abbrev)
                 )
             case _:
-                mtd_list = sorted(model_list, key=lambda mtd: (mtd.name))
+                mtd_list = sorted(model_list, key=lambda mtd: mtd.name)
 
         if include_task_type_headers:
             current_task_type = ""

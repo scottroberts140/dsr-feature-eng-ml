@@ -566,7 +566,7 @@ class DataSplits:
         Validation set target values for hyperparameter tuning.
     original_row_count : int
         Row count of the source dataset before any splitting.
-    random_state : int
+    random_state : Optional[int]
         Random seed for reproducible operations.
     scaler : StandardScaler, optional
         The fitted scaler used for numerical features.
@@ -581,7 +581,7 @@ class DataSplits:
     val_features: pd.DataFrame
     val_target: pd.Series
     original_row_count: int
-    random_state: int
+    random_state: Optional[int]
     scaler: StandardScaler | None = None
 
     @property
@@ -598,7 +598,7 @@ class DataSplits:
         test_size: float,
         valid_size: float,
         original_row_count: int,
-        random_state: int,
+        random_state: Optional[int],
         scale_features: bool = True,
         shuffle: bool = True,
         stratify: bool = False,
@@ -620,7 +620,7 @@ class DataSplits:
             Proportion of main data for validation (0.0 to 1.0).
         original_row_count : int
             Baseline row count for metadata tracking.
-        random_state : int
+        random_state : Optional[int]
             Random seed for reproducibility.
         scale_features : bool, default True
             Whether to apply StandardScaler to numeric features.
@@ -1886,7 +1886,7 @@ class ModelAuditorConfig:
         balancing_strategies: list[BalancingStrategy] | None = None,
         test_size: float = 0.2,
         valid_size: float = 0.2,
-        random_state: int = 42,
+        random_state: Optional[int] = 42,
         scale_features: bool = True,
         optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
         task_type: TaskType = TaskType.CLASSIFICATION,

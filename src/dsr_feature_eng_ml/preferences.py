@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import MISSING, asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 from dsr_files.json_handler import load_json, save_json
@@ -48,7 +48,7 @@ class Preferences:
 
     Attributes
     ----------
-    random_state : int, default 42
+    random_state : Optional[int], default 42
         Seed used for reproducibility in model training and data splitting.
     acceptable_gap : float, default 0.02
         The maximum training-to-test performance gap considered 'Well-Fit'.
@@ -64,7 +64,7 @@ class Preferences:
     _initialized = False
 
     # Default values
-    random_state: int = 42
+    random_state: Optional[int] = 42
     default_float_type: str = "float32"
     report_width: int = 100
     viable_f1_gap: float = 0.01
@@ -391,7 +391,7 @@ class Preferences:
             If the file extension is not '.json'.
         """
         # Use the robust loader from dsr-files
-        data = load_json(path)
+        data, _ = load_json(path)
 
         # Update the singleton instance with the loaded data
         self.update(**data)

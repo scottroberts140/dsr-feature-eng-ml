@@ -57,7 +57,7 @@ class DecisionTreeParams(ModelParams):
         cls,
         task_type: TaskType,
         scoring: ScoringMetric,
-        random_state: int,
+        random_state: Optional[int],
         **kwargs: Any,
     ) -> DecisionTreeParams:
         """Create a parameter instance with task-appropriate defaults."""
