@@ -17,7 +17,7 @@ from dsr_feature_eng_ml.enums import (
 )
 from dsr_feature_eng_ml.models.model_specification import (
     ModelParams,
-    ModelSpecification,
+    RegressionModelSpecification,
 )
 from dsr_feature_eng_ml.preferences import prefs
 
@@ -66,7 +66,7 @@ class LassoParams(ModelParams):
         return {"alpha": [1e-4, 1e-3, 0.01, 0.1, 1.0, 10.0, 100.0]}
 
 
-class LassoRegression(ModelSpecification[LassoParams, SklearnLasso]):
+class LassoRegression(RegressionModelSpecification[LassoParams, SklearnLasso]):
     """Lasso regression model specification implementation."""
 
     params_class = LassoParams

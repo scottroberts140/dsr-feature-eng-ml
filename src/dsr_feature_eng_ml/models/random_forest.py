@@ -174,9 +174,7 @@ class RandomForest(
     ):
         """Initialize the Random Forest model specification."""
         resolved_scoring = scoring or (
-            ScoringMetric.R2
-            if task_type == TaskType.REGRESSION
-            else ScoringMetric.F1
+            ScoringMetric.R2 if task_type == TaskType.REGRESSION else ScoringMetric.F1
         )
 
         if params is None:
@@ -282,12 +280,15 @@ class RandomForest(
 class RandomForestClassifierModel(RandomForest):
     """Task-specific random forest wrapper for classification models."""
 
+    @property
+    def task_type(self) -> TaskType:
+        return TaskType.CLASSIFICATION
+
     def __init__(
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
         params: Optional[RandomForestParams] = None,
-        task_type: TaskType = TaskType.CLASSIFICATION,
         scoring: ScoringMetric = ScoringMetric.F1,
         n_jobs: int = 3,
         n_iter: int = -1,
@@ -295,10 +296,6 @@ class RandomForestClassifierModel(RandomForest):
         large_gap: float = prefs.large_gap,
         optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
     ):
-        if task_type != TaskType.CLASSIFICATION:
-            raise ValueError(
-                "RandomForestClassifierModel only supports TaskType.CLASSIFICATION"
-            )
         if params is not None and params.task_type != TaskType.CLASSIFICATION:
             raise ValueError(
                 "RandomForestClassifierModel requires params.task_type == TaskType.CLASSIFICATION"
@@ -321,12 +318,15 @@ class RandomForestClassifierModel(RandomForest):
 class RandomForestRegressorModel(RandomForest):
     """Task-specific random forest wrapper for regression models."""
 
+    @property
+    def task_type(self) -> TaskType:
+        return TaskType.REGRESSION
+
     def __init__(
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
         params: Optional[RandomForestParams] = None,
-        task_type: TaskType = TaskType.REGRESSION,
         scoring: ScoringMetric = ScoringMetric.R2,
         n_jobs: int = 3,
         n_iter: int = -1,
@@ -334,10 +334,6 @@ class RandomForestRegressorModel(RandomForest):
         large_gap: float = prefs.large_gap,
         optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
     ):
-        if task_type != TaskType.REGRESSION:
-            raise ValueError(
-                "RandomForestRegressorModel only supports TaskType.REGRESSION"
-            )
         if params is not None and params.task_type != TaskType.REGRESSION:
             raise ValueError(
                 "RandomForestRegressorModel requires params.task_type == TaskType.REGRESSION"

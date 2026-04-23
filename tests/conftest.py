@@ -1,9 +1,8 @@
 from pathlib import Path
 
 import pytest
-from dsr_files.parquet_handler import load_parquet
-
 from dsr_feature_eng_ml.enums import BalancingStrategy, ScoringMetric, TaskType
+from dsr_files.parquet_handler import load_parquet
 
 
 @pytest.fixture

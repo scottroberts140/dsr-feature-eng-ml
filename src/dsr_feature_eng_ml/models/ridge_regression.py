@@ -17,7 +17,7 @@ from dsr_feature_eng_ml.enums import (
 )
 from dsr_feature_eng_ml.models.model_specification import (
     ModelParams,
-    ModelSpecification,
+    RegressionModelSpecification,
 )
 from dsr_feature_eng_ml.prefs_instance import prefs
 
@@ -81,7 +81,7 @@ class RidgeParams(ModelParams):
         return {"alpha": [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]}
 
 
-class RidgeRegression(ModelSpecification[RidgeParams, SklearnRidge]):
+class RidgeRegression(RegressionModelSpecification[RidgeParams, SklearnRidge]):
     """
     Ridge regression model specification.
 

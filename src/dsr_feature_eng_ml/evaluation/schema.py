@@ -376,7 +376,7 @@ class FeatureMetadata:
             fmt = exceptions.get(col) or formatters.fmt_for_dtype(df[col].dtype)
 
             # 2. Assign Stable ID
-            feature_id = f"F{id_fmt.format_value(i+1)}"
+            feature_id = f"F{id_fmt.format_value(i + 1)}"
 
             # 3. Validate Parent Relationship
             parent = parents.get(col)
@@ -611,7 +611,11 @@ class DataSplits:
         src : pd.DataFrame
             Source DataFrame containing features and target.
         features_to_include : list[str]
-            Column names to use as features.
+            Column names to use as features. Non-numeric (categorical) columns
+            are one-hot encoded; the stored feature list is expanded to include
+            the resulting dummy columns, aligned to training-set columns. When
+            encoding is applied, an ``INFO`` message is printed listing the
+            affected columns.
         target_column : str
             Name of the target variable column.
         test_size : float
@@ -656,58 +660,70 @@ class DataSplits:
 
         scaler_to_store: StandardScaler | None = None
 
-        # 3. Handle Scaling (Numeric Only)
-        if scale_features:
-            numeric_cols = train_feat.select_dtypes(
-                include=[np.number]
-            ).columns.tolist()
-            categorical_cols = train_feat.select_dtypes(
-                exclude=[np.number]
-            ).columns.tolist()
+        # 3. Transform features into model-ready numeric matrices.
+        numeric_cols = train_feat.select_dtypes(include=[np.number]).columns.tolist()
+        categorical_cols = train_feat.select_dtypes(
+            exclude=[np.number]
+        ).columns.tolist()
 
-            scaler = StandardScaler()
+        if numeric_cols:
+            if scale_features:
+                scaler = StandardScaler()
 
-            # Fit only on training data to prevent leakage
-            train_scaled = scaler.fit_transform(train_feat[numeric_cols])
-            val_scaled = scaler.transform(val_feat[numeric_cols])
-            test_scaled = scaler.transform(test_feat[numeric_cols])
-
-            # Reconstruction while preserving index
-            train_feat_scaled = pd.DataFrame(
-                train_scaled, columns=numeric_cols, index=train_feat.index
-            )
-            val_feat_scaled = pd.DataFrame(
-                val_scaled, columns=numeric_cols, index=val_feat.index
-            )
-            test_feat_scaled = pd.DataFrame(
-                test_scaled, columns=numeric_cols, index=test_feat.index
-            )
-
-            if categorical_cols:
-                train_feat = pd.concat(
-                    [train_feat_scaled, train_feat[categorical_cols]], axis=1
+                # Fit only on training data to prevent leakage.
+                train_num = pd.DataFrame(
+                    scaler.fit_transform(train_feat[numeric_cols]),
+                    columns=numeric_cols,
+                    index=train_feat.index,
                 )
-                val_feat = pd.concat(
-                    [val_feat_scaled, val_feat[categorical_cols]], axis=1
+                val_num = pd.DataFrame(
+                    scaler.transform(val_feat[numeric_cols]),
+                    columns=numeric_cols,
+                    index=val_feat.index,
                 )
-                test_feat = pd.concat(
-                    [test_feat_scaled, test_feat[categorical_cols]], axis=1
+                test_num = pd.DataFrame(
+                    scaler.transform(test_feat[numeric_cols]),
+                    columns=numeric_cols,
+                    index=test_feat.index,
                 )
+                scaler_to_store = scaler
             else:
-                train_feat, val_feat, test_feat = (
-                    train_feat_scaled,
-                    val_feat_scaled,
-                    test_feat_scaled,
+                train_num = pd.DataFrame(
+                    train_feat[numeric_cols], index=train_feat.index
                 )
+                val_num = pd.DataFrame(val_feat[numeric_cols], index=val_feat.index)
+                test_num = pd.DataFrame(test_feat[numeric_cols], index=test_feat.index)
+        else:
+            train_num = pd.DataFrame(index=train_feat.index)
+            val_num = pd.DataFrame(index=val_feat.index)
+            test_num = pd.DataFrame(index=test_feat.index)
 
-            # Maintain original column order
-            train_feat = train_feat[features_to_include]
-            val_feat = val_feat[features_to_include]
-            test_feat = test_feat[features_to_include]
-            scaler_to_store = scaler
+        if categorical_cols:
+            print(
+                f"INFO: One-hot encoding automatically applied to "
+                f"{len(categorical_cols)} categorical column(s): "
+                f"{categorical_cols}"
+            )
+            train_cat = pd.get_dummies(train_feat[categorical_cols], dtype=np.float32)
+            val_cat = pd.get_dummies(val_feat[categorical_cols], dtype=np.float32)
+            test_cat = pd.get_dummies(test_feat[categorical_cols], dtype=np.float32)
+
+            # Align validation/test columns with training columns to avoid leakage.
+            val_cat = val_cat.reindex(columns=train_cat.columns, fill_value=0.0)
+            test_cat = test_cat.reindex(columns=train_cat.columns, fill_value=0.0)
+        else:
+            train_cat = pd.DataFrame(index=train_feat.index)
+            val_cat = pd.DataFrame(index=val_feat.index)
+            test_cat = pd.DataFrame(index=test_feat.index)
+
+        train_feat = pd.concat([train_num, train_cat], axis=1)
+        val_feat = pd.concat([val_num, val_cat], axis=1)
+        test_feat = pd.concat([test_num, test_cat], axis=1)
+
+        transformed_features = train_feat.columns.tolist()
 
         return cls(
-            features_to_include=features_to_include,
+            features_to_include=transformed_features,
             target_column=target_column,
             test_features=test_feat,
             test_target=test_targ,
@@ -821,9 +837,13 @@ class DataSplits:
         -------
         pd.DataFrame
             A copy of the input DataFrame with identified numeric columns
-            reverted to original units.
+            reverted to original units. Returns an empty copy immediately
+            if the input DataFrame is empty.
         """
         if self.scaler is None:
+            return df.copy()
+
+        if df.empty:
             return df.copy()
 
         # Create a deep copy to ensure immutability of the source split
@@ -1236,11 +1256,19 @@ class ModelConfigurationStats:
             target_series: pd.Series,
         ) -> ModelConfigurationStats.ModelSplitStats:
             """Helper to calculate consistent stats for any series."""
-            arr = target_series.to_numpy()
+            numeric_series = pd.to_numeric(target_series, errors="coerce")
+
+            # Classification labels can be categorical/strings; factorize preserves
+            # relative distribution while enabling numeric summary statistics.
+            if numeric_series.isna().all():
+                codes, _ = pd.factorize(target_series)
+                numeric_series = pd.Series(codes, index=target_series.index)
+
+            arr = numeric_series.to_numpy()
             return ModelConfigurationStats.ModelSplitStats(
-                mean=float(target_series.mean()),
-                std=float(target_series.std()),
-                median=float(target_series.median()),
+                mean=float(numeric_series.mean()),
+                std=float(numeric_series.std()),
+                median=float(numeric_series.median()),
                 skew=float(skew(arr)),
                 kurtosis=float(kurtosis(arr)),
             )
@@ -1900,10 +1928,35 @@ class ModelAuditorConfig:
         ----------
         dataset : pd.DataFrame
             The raw source data.
+        original_row_count : int
+            Baseline row count for metadata tracking.
+        target_column : str
+            Name of the target variable column.
+        dataset_name : str
+            Display name for the dataset used in reports.
+        cv : int
+            Number of cross-validation folds.
         model_classes : Sequence[type[ModelSpecification]]
             The list of model types to instantiate (e.g., [RandomForest, Lasso]).
+        model_params : dict[type[ModelSpecification], ModelParams], optional
+            Per-class hyperparameter overrides. If None, each model uses its defaults.
         balancing_strategies : list[BalancingStrategy], optional
             Strategies to apply (NONE, OVERSAMPLED, etc.).
+        test_size : float, default 0.2
+            Proportion of data for test set (0.0 to 1.0).
+        valid_size : float, default 0.2
+            Proportion of main data for validation (0.0 to 1.0).
+        random_state : int, optional, default 42
+            Random seed for reproducibility.
+        scale_features : bool, default True
+            Whether to apply StandardScaler to numeric features.
+        optimization_strategy : OptimizationStrategy, default MANUAL
+            Hyperparameter search strategy for all models.
+        task_type : TaskType, default CLASSIFICATION
+            Whether the problem is classification or regression.
+        features : dict[str, FeatureMetadata], optional
+            Explicit feature metadata map. If None, metadata is auto-built from
+            the training split columns after encoding.
         """
         from dsr_feature_eng_ml.models.model_specification import ModelSpecification
 
@@ -1924,12 +1977,42 @@ class ModelAuditorConfig:
         # 2. Setup defaults for mutable types
         m_params = model_params or {}
         b_strategies = balancing_strategies or [BalancingStrategy.NONE]
-        feat_meta = features or {}
+        feat_meta = features or FeatureMetadata.from_df(
+            df=splits.train_features,
+            exclude_from_fit={target_column},
+        )
         instantiated_models = []
 
         # 3. Model Instantiation Loop
         for m_cls in model_classes:
             base_params = m_params.get(m_cls)
+
+            # Normalize legacy base classes to task-specific wrappers so model
+            # construction does not depend on a task_type constructor argument.
+            resolved_model_cls = m_cls
+            from dsr_feature_eng_ml.models.decision_tree import (
+                DecisionTree,
+                DecisionTreeClassifierModel,
+                DecisionTreeRegressorModel,
+            )
+            from dsr_feature_eng_ml.models.random_forest import (
+                RandomForest,
+                RandomForestClassifierModel,
+                RandomForestRegressorModel,
+            )
+
+            if m_cls is DecisionTree:
+                resolved_model_cls = (
+                    DecisionTreeRegressorModel
+                    if task_type == TaskType.REGRESSION
+                    else DecisionTreeClassifierModel
+                )
+            elif m_cls is RandomForest:
+                resolved_model_cls = (
+                    RandomForestRegressorModel
+                    if task_type == TaskType.REGRESSION
+                    else RandomForestClassifierModel
+                )
 
             # Ensure params are updated with global state
             if base_params:
@@ -1940,12 +2023,11 @@ class ModelAuditorConfig:
 
             for strategy in b_strategies:
                 model_instance = ModelSpecification.instantiate_model(
-                    model_cls=m_cls,
+                    model_cls=resolved_model_cls,
                     strategy=strategy,
                     params=base_params,
                     cv=cv,
                     optimization_strategy=optimization_strategy,
-                    task_type=task_type,
                     **kwargs,
                 )
                 instantiated_models.append(model_instance)

@@ -15,10 +15,9 @@ from dsr_feature_eng_ml.enums import (
     ScoringMetric,
     TaskType,
 )
-from dsr_feature_eng_ml.evaluation.schema import DataSplits
 from dsr_feature_eng_ml.models.model_specification import (
     ModelParams,
-    ModelSpecification,
+    RegressionModelSpecification,
 )
 from dsr_feature_eng_ml.prefs_instance import prefs
 
@@ -52,7 +51,7 @@ class LinearRegressionParams(ModelParams):
 
 
 class LinearRegression(
-    ModelSpecification[LinearRegressionParams, SklearnLinearRegression]
+    RegressionModelSpecification[LinearRegressionParams, SklearnLinearRegression]
 ):
     """Linear regression model specification."""
 

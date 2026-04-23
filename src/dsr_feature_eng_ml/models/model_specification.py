@@ -26,7 +26,7 @@ from typing import (
 import numpy as np
 import pandas as pd
 import psutil
-from dsr_utils.formatting import EnumFormat
+from dsr_utils.formatting import DataScale, EnumFormat
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
@@ -41,9 +41,9 @@ from dsr_feature_eng_ml.enums import (
 if TYPE_CHECKING:
     from dsr_feature_eng_ml.evaluation.schema import (
         DataSplits,
+        FeatureMetadata,
         ModelConfiguration,
         ModelFeatureImportance,
-        FeatureMetadata,
     )
 
 from dsr_feature_eng_ml.prefs_instance import prefs
@@ -330,7 +330,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         self.balancing_strategy = balancing_strategy
 
         # Validation: Ensure the scoring metric is compatible with the task type
-        valid_metrics = ScoringMetric.get_valid_metrics(self.task_type)
+        valid_metrics = self.get_valid_scoring_metrics()
         if self.scoring not in valid_metrics:
             enum_format = EnumFormat(use_value=False)
             raise ValueError(
@@ -445,6 +445,14 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         """Instantiate a raw scikit-learn estimator with current settings."""
         pass
 
+    def get_valid_scoring_metrics(self) -> list[ScoringMetric]:
+        """Return valid scoring metrics for this model specification."""
+        return ScoringMetric.get_valid_metrics(self.task_type)
+
+    def resolve_search_scoring_key(self) -> str:
+        """Return the scoring key used for CV search."""
+        return self.scoring.value
+
     def is_probabilistic(self, estimator: Any) -> TypeGuard[ProbabilisticClassifier]:
         """
         Verify if the estimator supports class probability prediction.
@@ -511,9 +519,9 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         risk_triggered : bool
             True if the memory audit detected a high risk of OOM.
         available_gb : float
-            System memory available at the start of tuning (in bytes).
+            System memory available at the start of tuning (in GB).
         estimated_peak_gb : float
-            Predicted maximum memory usage for the tuning process (in bytes).
+            Predicted maximum memory usage for the tuning process (in GB).
         model_multiplier : float
             The complexity multiplier used for the memory estimation.
         sampling_factor : float
@@ -630,22 +638,26 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             if self.n_iter == -1:
                 self.n_iter = calculate_search_iterations(refined_grid)
 
+            scoring_key = self.resolve_search_scoring_key()
+
             search_cv = RandomizedSearchCV(
                 estimator=cast(BaseEstimator, base_estimator),
                 param_distributions=refined_grid,
                 n_iter=self.n_iter,
                 cv=self.cv,
-                scoring=self.scoring.value,
+                scoring=scoring_key,
                 n_jobs=self.n_jobs,
                 verbose=prefs.cv_verbose,
                 random_state=data_splits.random_state,
             )
         else:
+            scoring_key = self.resolve_search_scoring_key()
+
             search_cv = GridSearchCV(
                 estimator=cast(BaseEstimator, base_estimator),
                 param_grid=_prepare_search_grid(base_estimator, grid),
                 cv=self.cv,
-                scoring=self.scoring.value,
+                scoring=scoring_key,
                 n_jobs=self.n_jobs,
                 verbose=prefs.cv_verbose,
             )
@@ -692,9 +704,9 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         Returns
         -------
         mem_used : float
-            The difference in memory usage (bytes) between start and end of fit.
+            The difference in memory usage (GB) between start and end of fit.
         peak_rss : float
-            The absolute peak Resident Set Size (bytes) measured after fit.
+            The absolute peak Resident Set Size (GB) measured after fit.
         """
         # 1. Prepare Data based on Balancing Strategy
         X, y = data_splits.get_balanced_train_data(
@@ -723,7 +735,9 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         mem_after = process.memory_info().rss
         mem_used = mem_after - mem_before
 
-        return float(mem_used), float(mem_after)
+        return DataScale.GB.get_scaled_value(
+            float(mem_used)
+        ), DataScale.GB.get_scaled_value(float(mem_after))
 
     def fit_and_evaluate_val(
         self,
@@ -1006,56 +1020,14 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         train_target = data_splits.train_target
 
         # 2. Task-Specific Scoring
-        if self.task_type == TaskType.CLASSIFICATION:
-            # Training metrics
-            acc_train, _, _, _ = self._score_classification(
-                features=train_features,
-                targets=train_target,
-                filter_outliers=filter_outliers,
-                outlier_count=outlier_count,
-            )
-            # Validation metrics
-            acc_val, acc_val_cleaned, preds_val, probs_val = self._score_classification(
-                features=eval_features,
-                targets=eval_target,
-                filter_outliers=filter_outliers,
-                outlier_count=outlier_count,
-            )
-
-            score_train, score_val, score_val_cleaned = (
-                acc_train,
-                acc_val,
-                acc_val_cleaned,
-            )
-            accuracy_train, accuracy_val, accuracy_val_cleaned = (
-                acc_train,
-                acc_val,
-                acc_val_cleaned,
-            )
-
-            # Nullify regression-specific metrics
-            mae_train = mse_train = r2_train = None
-            mae_val = mse_val = r2_val = r2_val_cleaned = None
-
-        else:
-            # Regression path
-            mae_train, mse_train, r2_train, _, _ = self._score_regression(
-                features=train_features,
-                targets=train_target,
-                filter_outliers=False,
-                outlier_count=0,
-            )
-            mae_val, mse_val, r2_val, r2_val_cleaned, preds_val = (
-                self._score_regression(
-                    features=eval_features,
-                    targets=eval_target,
-                    filter_outliers=filter_outliers,
-                    outlier_count=outlier_count,
-                )
-            )
-
-            score_train, score_val, score_val_cleaned = r2_train, r2_val, r2_val_cleaned
-            accuracy_train = accuracy_val = accuracy_val_cleaned = probs_val = None
+        metrics = self._get_validation_metrics(
+            train_features=train_features,
+            train_target=train_target,
+            eval_features=eval_features,
+            eval_target=eval_target,
+            filter_outliers=filter_outliers,
+            outlier_count=outlier_count,
+        )
 
         # 3. Feature Importance and Initialization
         importance_analysis = self.analyze_feature_importance(features_to_fit_set)
@@ -1075,21 +1047,21 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             has_val_set_evaluation_scores=True,
             use_combined_data=use_combined_data,
             score_cv=score_cv,
-            score_train=score_train,
-            score_val=score_val,
-            score_val_cleaned=score_val_cleaned,
-            mae_train=mae_train,
-            mae_val=mae_val,
-            mse_train=mse_train,
-            mse_val=mse_val,
-            r2_train=r2_train,
-            r2_val=r2_val,
-            r2_val_cleaned=r2_val_cleaned,
-            accuracy_train=accuracy_train,
-            accuracy_val=accuracy_val,
-            accuracy_val_cleaned=accuracy_val_cleaned,
-            preds_val=preds_val,
-            probs_val=probs_val,
+            score_train=metrics["score_train"],
+            score_val=metrics["score_val"],
+            score_val_cleaned=metrics["score_val_cleaned"],
+            mae_train=metrics["mae_train"],
+            mae_val=metrics["mae_val"],
+            mse_train=metrics["mse_train"],
+            mse_val=metrics["mse_val"],
+            r2_train=metrics["r2_train"],
+            r2_val=metrics["r2_val"],
+            r2_val_cleaned=metrics["r2_val_cleaned"],
+            accuracy_train=metrics["accuracy_train"],
+            accuracy_val=metrics["accuracy_val"],
+            accuracy_val_cleaned=metrics["accuracy_val_cleaned"],
+            preds_val=metrics["preds_val"],
+            probs_val=metrics["probs_val"],
             acceptable_gap=self.acceptable_gap,
             large_gap=self.large_gap,
             feature_analysis=importance_analysis,
@@ -1170,40 +1142,24 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         eval_target = data_splits.test_target
 
         # 3. Task-Specific Scoring
-        if self.task_type == TaskType.CLASSIFICATION:
-            # Note: Test set typically does not report 'cleaned' scores to avoid
-            # data leakage/optimism bias, but we pass the flags to maintain interface.
-            acc_test, _, preds_test, probs_test = self._score_classification(
-                features=eval_features,
-                targets=eval_target,
-                filter_outliers=config.filter_outliers,
-                outlier_count=config.outlier_count,
-            )
-            score_test = acc_test
-            accuracy_test = acc_test
-            mae_test = mse_test = r2_test = None
-        else:
-            mae_test, mse_test, r2_test, _, preds_test = self._score_regression(
-                features=eval_features,
-                targets=eval_target,
-                filter_outliers=config.filter_outliers,
-                outlier_count=config.outlier_count,
-            )
-            score_test = r2_test
-            accuracy_test = None
-            probs_test = None
+        test_metrics = self._get_test_metrics(
+            eval_features=eval_features,
+            eval_target=eval_target,
+            filter_outliers=config.filter_outliers,
+            outlier_count=config.outlier_count,
+        )
 
         # 4. Update Configuration Metrics
         config = dataclasses.replace(
             config,
             has_test_set_evaluation_scores=True,
-            score_test=score_test,
-            mae_test=mae_test,
-            mse_test=mse_test,
-            r2_test=r2_test,
-            accuracy_test=accuracy_test,
-            preds_test=preds_test,
-            probs_test=probs_test,
+            score_test=test_metrics["score_test"],
+            mae_test=test_metrics["mae_test"],
+            mse_test=test_metrics["mse_test"],
+            r2_test=test_metrics["r2_test"],
+            accuracy_test=test_metrics["accuracy_test"],
+            preds_test=test_metrics["preds_test"],
+            probs_test=test_metrics["probs_test"],
         )
 
         # 5. Statistical Distribution Analysis (Test Set)
@@ -1340,6 +1296,118 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             feature_set=features_to_fit_set, importances=importances
         )
 
+    def _get_validation_metrics(
+        self,
+        train_features: pd.DataFrame,
+        train_target: pd.Series[Any],
+        eval_features: pd.DataFrame,
+        eval_target: pd.Series[Any],
+        filter_outliers: bool,
+        outlier_count: int,
+    ) -> dict[str, Any]:
+        """Return train/validation metrics in a normalized dictionary shape."""
+        if self.task_type == TaskType.CLASSIFICATION:
+            acc_train, _, _, _ = self._score_classification(
+                features=train_features,
+                targets=train_target,
+                filter_outliers=filter_outliers,
+                outlier_count=outlier_count,
+            )
+            acc_val, acc_val_cleaned, preds_val, probs_val = self._score_classification(
+                features=eval_features,
+                targets=eval_target,
+                filter_outliers=filter_outliers,
+                outlier_count=outlier_count,
+            )
+            return {
+                "score_train": acc_train,
+                "score_val": acc_val,
+                "score_val_cleaned": acc_val_cleaned,
+                "mae_train": None,
+                "mae_val": None,
+                "mse_train": None,
+                "mse_val": None,
+                "r2_train": None,
+                "r2_val": None,
+                "r2_val_cleaned": None,
+                "accuracy_train": acc_train,
+                "accuracy_val": acc_val,
+                "accuracy_val_cleaned": acc_val_cleaned,
+                "preds_val": preds_val,
+                "probs_val": probs_val,
+            }
+
+        mae_train, mse_train, r2_train, _, _ = self._score_regression(
+            features=train_features,
+            targets=train_target,
+            filter_outliers=False,
+            outlier_count=0,
+        )
+        mae_val, mse_val, r2_val, r2_val_cleaned, preds_val = self._score_regression(
+            features=eval_features,
+            targets=eval_target,
+            filter_outliers=filter_outliers,
+            outlier_count=outlier_count,
+        )
+        return {
+            "score_train": r2_train,
+            "score_val": r2_val,
+            "score_val_cleaned": r2_val_cleaned,
+            "mae_train": mae_train,
+            "mae_val": mae_val,
+            "mse_train": mse_train,
+            "mse_val": mse_val,
+            "r2_train": r2_train,
+            "r2_val": r2_val,
+            "r2_val_cleaned": r2_val_cleaned,
+            "accuracy_train": None,
+            "accuracy_val": None,
+            "accuracy_val_cleaned": None,
+            "preds_val": preds_val,
+            "probs_val": None,
+        }
+
+    def _get_test_metrics(
+        self,
+        eval_features: pd.DataFrame,
+        eval_target: pd.Series[Any],
+        filter_outliers: bool,
+        outlier_count: int,
+    ) -> dict[str, Any]:
+        """Return hold-out test metrics in a normalized dictionary shape."""
+        if self.task_type == TaskType.CLASSIFICATION:
+            acc_test, _, preds_test, probs_test = self._score_classification(
+                features=eval_features,
+                targets=eval_target,
+                filter_outliers=filter_outliers,
+                outlier_count=outlier_count,
+            )
+            return {
+                "score_test": acc_test,
+                "mae_test": None,
+                "mse_test": None,
+                "r2_test": None,
+                "accuracy_test": acc_test,
+                "preds_test": preds_test,
+                "probs_test": probs_test,
+            }
+
+        mae_test, mse_test, r2_test, _, preds_test = self._score_regression(
+            features=eval_features,
+            targets=eval_target,
+            filter_outliers=filter_outliers,
+            outlier_count=outlier_count,
+        )
+        return {
+            "score_test": r2_test,
+            "mae_test": mae_test,
+            "mse_test": mse_test,
+            "r2_test": r2_test,
+            "accuracy_test": None,
+            "preds_test": preds_test,
+            "probs_test": None,
+        }
+
     @staticmethod
     def instantiate_model(
         model_cls: type[ModelSpecification],
@@ -1347,85 +1415,32 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         params: Optional[ModelParams],
         cv: int,
         optimization_strategy: OptimizationStrategy,
-        task_type: TaskType,
         **kwargs: Any,
     ) -> ModelSpecification:
-        """
-        Factory method to instantiate a concrete ModelSpecification.
-
-        This utility simplifies the creation of model instances by mapping standard
-        library arguments to the specific constructor requirements of the
-        target model class.
-
-        Parameters
-        ----------
-        model_cls : type[ModelSpecification]
-            The concrete subclass to instantiate (e.g., RandomForest).
-        strategy : BalancingStrategy
-            The resampling or weighting strategy to apply.
-        params : ModelParams, optional
-            A pre-configured hyperparameter container.
-        cv : int
-            The number of cross-validation folds.
-        optimization_strategy : OptimizationStrategy
-            The method used for parameter tuning (MANUAL, GRID, or RANDOM).
-        task_type : TaskType
-            The ML task definition (CLASSIFICATION or REGRESSION).
-        **kwargs : Any
-            Additional model-specific keyword arguments passed to the constructor.
-
-        Returns
-        -------
-        ModelSpecification
-            An initialized instance of the requested model class.
-        """
-        # Consolidate standard initialization arguments
+        """Factory method to instantiate a concrete ModelSpecification."""
         init_kwargs = {
             "balancing_strategy": strategy,
             "params": params,
             "cv": cv,
             "optimization_strategy": optimization_strategy,
-            "task_type": task_type,
             **kwargs,
         }
-
         return model_cls(**init_kwargs)
 
     @classmethod
     def create_model_from_config(
         cls, config: ModelConfiguration
     ) -> Optional[ModelSpecification]:
-        """
-        Reconstruct a ModelSpecification instance from a configuration object.
-
-        This method acts as a bridge between the serialized results (ModelConfiguration)
-        and the executable logic, enabling the restoration of a specific model
-        setup including its hyperparameters and strategy settings.
-
-        Parameters
-        ----------
-        config : ModelConfiguration
-            The configuration container holding the model type, task definition,
-            and hyperparameter state.
-
-        Returns
-        -------
-        ModelSpecification, optional
-            A concrete model instance (e.g., RandomForest) ready for fitting or
-            prediction. Returns None if the model type cannot be mapped to a class.
-        """
-        # Retrieve the concrete class mapped to the ModelType enum
+        """Reconstruct a ModelSpecification instance from a configuration object."""
         model_cls = config.model_type.model_class
 
         if model_cls is not None:
-            # Re-instantiate using the factory method
             return cls.instantiate_model(
                 model_cls=model_cls,
                 strategy=config.balancing_strategy,
                 params=config.model_params,
                 cv=config.cv,
                 optimization_strategy=config.optimization_strategy,
-                task_type=config.task_type,
                 scoring=config.scoring,
                 n_jobs=config.n_jobs,
                 n_iter=config.n_iter,
@@ -1434,8 +1449,160 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
                 large_gap=config.large_gap,
             )
 
-        # Log failure if the enum mapping is missing or broken
         print(
             f"⚠️ Unable to instantiate model class: ModelType.{config.model_type.name} has no associated class."
         )
         return None
+
+
+class ClassificationModelSpecification(ModelSpecification[T_Params, T_Estimator], ABC):
+    """Task-specialized base class for classification model specifications."""
+
+    @property
+    def task_type(self) -> TaskType:
+        return TaskType.CLASSIFICATION
+
+    def get_valid_scoring_metrics(self) -> list[ScoringMetric]:
+        return ScoringMetric.get_valid_metrics(TaskType.CLASSIFICATION)
+
+    def resolve_search_scoring_key(self) -> str:
+        return {
+            ScoringMetric.F1: "f1_weighted",
+            ScoringMetric.PRECISION: "precision_weighted",
+            ScoringMetric.RECALL: "recall_weighted",
+        }.get(self.scoring, self.scoring.value)
+
+    def _get_validation_metrics(
+        self,
+        train_features: pd.DataFrame,
+        train_target: pd.Series[Any],
+        eval_features: pd.DataFrame,
+        eval_target: pd.Series[Any],
+        filter_outliers: bool,
+        outlier_count: int,
+    ) -> dict[str, Any]:
+        acc_train, _, _, _ = self._score_classification(
+            features=train_features,
+            targets=train_target,
+            filter_outliers=filter_outliers,
+            outlier_count=outlier_count,
+        )
+        acc_val, acc_val_cleaned, preds_val, probs_val = self._score_classification(
+            features=eval_features,
+            targets=eval_target,
+            filter_outliers=filter_outliers,
+            outlier_count=outlier_count,
+        )
+        return {
+            "score_train": acc_train,
+            "score_val": acc_val,
+            "score_val_cleaned": acc_val_cleaned,
+            "mae_train": None,
+            "mae_val": None,
+            "mse_train": None,
+            "mse_val": None,
+            "r2_train": None,
+            "r2_val": None,
+            "r2_val_cleaned": None,
+            "accuracy_train": acc_train,
+            "accuracy_val": acc_val,
+            "accuracy_val_cleaned": acc_val_cleaned,
+            "preds_val": preds_val,
+            "probs_val": probs_val,
+        }
+
+    def _get_test_metrics(
+        self,
+        eval_features: pd.DataFrame,
+        eval_target: pd.Series[Any],
+        filter_outliers: bool,
+        outlier_count: int,
+    ) -> dict[str, Any]:
+        acc_test, _, preds_test, probs_test = self._score_classification(
+            features=eval_features,
+            targets=eval_target,
+            filter_outliers=filter_outliers,
+            outlier_count=outlier_count,
+        )
+        return {
+            "score_test": acc_test,
+            "mae_test": None,
+            "mse_test": None,
+            "r2_test": None,
+            "accuracy_test": acc_test,
+            "preds_test": preds_test,
+            "probs_test": probs_test,
+        }
+
+
+class RegressionModelSpecification(ModelSpecification[T_Params, T_Estimator], ABC):
+    """Task-specialized base class for regression model specifications."""
+
+    @property
+    def task_type(self) -> TaskType:
+        return TaskType.REGRESSION
+
+    def get_valid_scoring_metrics(self) -> list[ScoringMetric]:
+        return ScoringMetric.get_valid_metrics(TaskType.REGRESSION)
+
+    def _get_validation_metrics(
+        self,
+        train_features: pd.DataFrame,
+        train_target: pd.Series[Any],
+        eval_features: pd.DataFrame,
+        eval_target: pd.Series[Any],
+        filter_outliers: bool,
+        outlier_count: int,
+    ) -> dict[str, Any]:
+        mae_train, mse_train, r2_train, _, _ = self._score_regression(
+            features=train_features,
+            targets=train_target,
+            filter_outliers=False,
+            outlier_count=0,
+        )
+        mae_val, mse_val, r2_val, r2_val_cleaned, preds_val = self._score_regression(
+            features=eval_features,
+            targets=eval_target,
+            filter_outliers=filter_outliers,
+            outlier_count=outlier_count,
+        )
+        return {
+            "score_train": r2_train,
+            "score_val": r2_val,
+            "score_val_cleaned": r2_val_cleaned,
+            "mae_train": mae_train,
+            "mae_val": mae_val,
+            "mse_train": mse_train,
+            "mse_val": mse_val,
+            "r2_train": r2_train,
+            "r2_val": r2_val,
+            "r2_val_cleaned": r2_val_cleaned,
+            "accuracy_train": None,
+            "accuracy_val": None,
+            "accuracy_val_cleaned": None,
+            "preds_val": preds_val,
+            "probs_val": None,
+        }
+
+    def _get_test_metrics(
+        self,
+        eval_features: pd.DataFrame,
+        eval_target: pd.Series[Any],
+        filter_outliers: bool,
+        outlier_count: int,
+    ) -> dict[str, Any]:
+        mae_test, mse_test, r2_test, _, preds_test = self._score_regression(
+            features=eval_features,
+            targets=eval_target,
+            filter_outliers=filter_outliers,
+            outlier_count=outlier_count,
+        )
+        return {
+            "score_test": r2_test,
+            "mae_test": mae_test,
+            "mse_test": mse_test,
+            "r2_test": r2_test,
+            "accuracy_test": None,
+            "preds_test": preds_test,
+            "probs_test": None,
+        }

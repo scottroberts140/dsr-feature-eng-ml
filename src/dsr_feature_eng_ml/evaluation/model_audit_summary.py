@@ -6,7 +6,7 @@ import dataclasses
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,7 @@ from dsr_utils.strings import (
     to_original_string,
 )
 
-from dsr_feature_eng_ml.enums import ModelType
+from dsr_feature_eng_ml.enums import ModelType, TaskType
 from dsr_feature_eng_ml.models import ModelSpecification
 from dsr_feature_eng_ml.prefs_instance import prefs
 
@@ -38,11 +38,8 @@ from .audit_pdf_renderer import AuditPDFRenderer
 from .schema import DataSplits, FeatureMetadata, ModelConfiguration
 
 if TYPE_CHECKING:
-    import matplotlib.pyplot as plt
+    from cloudpathlib import CloudPath
     from dsr_files.enums import FileType
-    from matplotlib.figure import Figure
-    from matplotlib.table import Table
-    from matplotlib.transforms import Bbox
 
 # Constants for Anomaly Reporting
 AUDIT_ANOMALY_ACTUAL_COL = "_audit_Actual"
@@ -79,7 +76,7 @@ class ModelAuditSummary:
     # Using public attributes for these reduces boilerplate while maintaining V1.2.0 style
 
     @property
-    def random_state(self) -> int:
+    def random_state(self) -> Optional[int]:
         """Return random state from splits or global preferences."""
         return self.data_splits.random_state if self.data_splits else prefs.random_state
 
@@ -423,10 +420,13 @@ class ModelAuditSummary:
 
     def capture_anomaly_context(self) -> None:
         """
-        Identify high-error rows and high-kurtosis features for audit context.
+        Identify anomalous rows and high-kurtosis features for audit context.
 
-        Analyzes the best-performing model to extract outliers and identifies
+        Analyzes the best-performing model to extract anomalies and identifies
         features with the most extreme distributions to aid in error analysis.
+        For regression, anomalies are rows whose absolute residual exceeds the
+        ``anomaly_threshold`` percentile. For classification, anomalies are
+        misclassified rows.
         """
         config = self.best_overall_model
         if config is None:
@@ -440,13 +440,23 @@ class ModelAuditSummary:
             else pd.Series(dtype="float64")
         )
 
-        # Flatten and align to ensure matching indices
-        abs_errors = np.abs(y_val.to_numpy().flatten() - preds_val.to_numpy().flatten())
+        # Flatten and align to ensure matching indices.
+        if config.task_type == TaskType.CLASSIFICATION:
+            y_aligned = y_val.to_numpy().flatten().astype(str)
+            p_aligned = preds_val.to_numpy().flatten().astype(str)
+            abs_errors = (y_aligned != p_aligned).astype(np.float64)
 
-        # 2. Extract Anomaly Mask
-        # We use a percentile-based threshold (e.g., top 5% of errors)
-        threshold = np.percentile(abs_errors, self.anomaly_threshold)
-        anomaly_mask = abs_errors >= threshold
+            # For classification, anomalies are misclassifications.
+            anomaly_mask = abs_errors > 0.0
+        else:
+            abs_errors = np.abs(
+                y_val.to_numpy().flatten() - preds_val.to_numpy().flatten()
+            )
+
+            # 2. Extract Anomaly Mask
+            # We use a percentile-based threshold (e.g., top 5% of errors).
+            threshold = np.percentile(abs_errors, self.anomaly_threshold)
+            anomaly_mask = abs_errors >= threshold
 
         # 3. Build Anomaly DataFrame (Inverting Scaling for Readability)
         anomalies_scaled = self.data_splits.val_features.iloc[anomaly_mask].copy()
@@ -599,12 +609,12 @@ class ModelAuditSummary:
         )
 
         header = (
-            f"\n{'='*prefs.report_width}\n"
+            f"\n{'=' * prefs.report_width}\n"
             f"AUDIT SNAPSHOT: {self.dataset_name}\n"
-            f"{'-'*prefs.report_width}\n"
+            f"{'-' * prefs.report_width}\n"
             f"{format_label_value_pairs(header_pairs, padding=4)}\n"
             f"Features Analyzed:\n{feat_grid}\n"
-            f"{'-'*prefs.report_width}\n"
+            f"{'-' * prefs.report_width}\n"
         )
 
         # 2. Build Results Table
@@ -624,7 +634,7 @@ class ModelAuditSummary:
         return (
             header
             + df[display_cols].to_string(index=False)
-            + f"\n{'='*prefs.report_width}\n"
+            + f"\n{'=' * prefs.report_width}\n"
         )
 
     def get_best_by_type(self, model_type: ModelType) -> ModelConfiguration | None:
@@ -725,7 +735,7 @@ class ModelAuditSummary:
         path_is_full_path: bool = False,
         append_timestamp_to_save_path: bool = False,
         report_title: str = "Model Audit Report",
-    ) -> Path:
+    ) -> tuple[Path | CloudPath, dict[str, Any]] | Path | CloudPath:
         """
         Export audit results to CSV, JSON, JOBLIB, Excel, or PDF.
 

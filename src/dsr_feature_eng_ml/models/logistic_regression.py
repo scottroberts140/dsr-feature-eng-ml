@@ -16,8 +16,8 @@ from dsr_feature_eng_ml.enums import (
     TaskType,
 )
 from dsr_feature_eng_ml.models.model_specification import (
+    ClassificationModelSpecification,
     ModelParams,
-    ModelSpecification,
 )
 from dsr_feature_eng_ml.prefs_instance import prefs
 
@@ -77,18 +77,20 @@ class LogisticRegressionParams(ModelParams):
             A parameter grid mapping keys to candidate values.
         """
         if narrow:
-            return {"C": [0.1, 1.0, 10.0], "penalty": ["l2"], "solver": ["lbfgs"]}
+            return {"C": [0.1, 1.0, 10.0], "l1_ratio": [0.0], "solver": ["lbfgs"]}
 
         return {
             "C": [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0],
-            "penalty": ["l1", "l2"],
+            "l1_ratio": [0.0, 1.0],
             "solver": ["liblinear", "saga"],
             "max_iter": [100, 500, 1000],
         }
 
 
 class LogisticRegression(
-    ModelSpecification[LogisticRegressionParams, SklearnLogisticRegression]
+    ClassificationModelSpecification[
+        LogisticRegressionParams, SklearnLogisticRegression
+    ]
 ):
     """
     Logistic regression model specification.
@@ -173,6 +175,11 @@ class LogisticRegression(
         """
         Instantiate a raw Scikit-Learn LogisticRegression estimator.
 
+        The ``penalty`` field on ``LogisticRegressionParams`` is translated to
+        the ``l1_ratio`` parameter required by scikit-learn 1.8+:
+        ``"l2"`` → 0.0, ``"l1"`` → 1.0, ``"elasticnet"`` uses the explicit
+        ``l1_ratio`` value, and ``None`` disables regularization.
+
         Parameters
         ----------
         parameters : LogisticRegressionParams, optional
@@ -180,12 +187,21 @@ class LogisticRegression(
         """
         p = parameters or self.model_dials
 
+        # sklearn 1.8+: penalty param deprecated; use l1_ratio instead.
+        # l1_ratio=0.0 → L2, l1_ratio=1.0 → L1, l1_ratio in (0,1) → elasticnet, None → no regularization.
+        _penalty_to_l1_ratio: dict[str, float] = {"l2": 0.0, "l1": 1.0}
+        if p.penalty is None:
+            l1_ratio = None
+        elif p.penalty == "elasticnet":
+            l1_ratio = p.l1_ratio
+        else:
+            l1_ratio = _penalty_to_l1_ratio.get(p.penalty, 0.0)
+
         return SklearnLogisticRegression(
-            penalty=p.penalty,
+            l1_ratio=l1_ratio,
             C=p.C,
             solver=p.solver,
             max_iter=p.max_iter,
             random_state=p.random_state,
             class_weight=p.class_weight,
-            l1_ratio=p.l1_ratio,
         )

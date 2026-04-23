@@ -17,7 +17,7 @@ from dsr_feature_eng_ml.enums import (
 )
 from dsr_feature_eng_ml.models.model_specification import (
     ModelParams,
-    ModelSpecification,
+    RegressionModelSpecification,
 )
 from dsr_feature_eng_ml.prefs_instance import prefs
 
@@ -84,7 +84,9 @@ class ElasticNetParams(ModelParams):
         }
 
 
-class ElasticNetRegression(ModelSpecification[ElasticNetParams, SklearnElasticNet]):
+class ElasticNetRegression(
+    RegressionModelSpecification[ElasticNetParams, SklearnElasticNet]
+):
     """
     Elastic Net regression model specification.
 
