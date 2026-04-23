@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* **Task-Specialized ModelSpecification Bases**: Introduced `ClassificationModelSpecification` and `RegressionModelSpecification` to centralize task-specific scoring behavior and reduce branching in shared model orchestration logic.
+* **Automatic Categorical Encoding Trace**: Added audit log visibility when `DataSplits.from_data_source` auto-applies one-hot encoding, including the affected source columns.
+
+### Changed
+
+* **Factory Task Routing Simplification**: Removed explicit `task_type` from `ModelSpecification.instantiate_model` and normalized base `DecisionTree` / `RandomForest` classes to task-specific wrappers during config assembly.
+* **Model Inheritance Alignment**: Updated single-task model classes (Logistic, Linear, Lasso, Ridge, Elastic Net) to inherit from task-specialized base specifications.
+* **Memory Telemetry Units**: Standardized fit-time memory telemetry to GB values in both implementation and docstrings.
+
+### Fixed
+
+* **String Target Scorer Compatibility**: Classification CV tuning now maps to weighted scorers (`f1_weighted`, `precision_weighted`, `recall_weighted`) to avoid `pos_label` errors with non-numeric labels.
+* **Classification Anomaly Logic**: Replaced residual subtraction on string labels with misclassification-based anomaly flags.
+* **Categorical Statistics Stability**: Added categorical target factorization in `ModelConfigurationStats` to prevent failures in mean/std/skew/kurtosis calculations.
+* **Empty Inverse Transform Guard**: `DataSplits.inverse_transform_df` now short-circuits on empty DataFrames to prevent scaler shape errors.
+* **Feature Metadata Initialization**: `ModelAuditorConfig.from_dataset` now auto-builds `FeatureMetadata` when not explicitly supplied, preventing empty fit-feature configurations.
+
 ## [1.2.3] - 2026-04-11
 
 ### Fixed

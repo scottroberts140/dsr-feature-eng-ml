@@ -12,6 +12,14 @@ This suite provides a high-fidelity framework for training, evaluating, and audi
 
 **Release scope**: Regression workflows have been tested. Classification workflows are implemented but not yet tested; a follow-up release will expand validation and coverage.
 
+## Recent Improvements (Unreleased)
+
+* Added task-specialized model bases: `ClassificationModelSpecification` and `RegressionModelSpecification`.
+* Simplified factory construction by removing explicit task routing from `instantiate_model` and normalizing legacy base classes to task-specific wrappers.
+* Updated fit-time memory telemetry to GB units and aligned related docstrings.
+* Added automatic one-hot encoding trace logging in `DataSplits.from_data_source` (including encoded source columns).
+* Improved classification scoring robustness for string labels by using weighted CV scorers where required.
+
 ## Core Capabilities
 
 * **Automated Model Auditing**: Orchestrates competitive sweeps across multiple model architectures with built-in hyperparameter tuning and cross-validation.
@@ -111,7 +119,8 @@ Orchestrates comprehensive model evaluation:
 
 * Python >= 3.11
 * dsr-utils >= 1.3.0
-* dsr-data-tools >= 1.2.0
+* dsr-data-tools >= 2.1.0
+* dsr-files >= 3.1.1
 * numpy >= 2.4.4
 * pandas >= 3.0.2
 * scikit-learn >= 1.8.0
