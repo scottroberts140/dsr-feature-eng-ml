@@ -155,3 +155,28 @@ def test_plot_target_distribution_handles_string_targets(populated_summary):
 
     assert ax.get_title() == "Target Distribution by Class"
     assert len(ax.patches) > 0
+
+
+def test_plot_regression_residuals_constant_predictions(populated_summary):
+    """
+    Ensure no UserWarning when predictions and targets are nearly constant.
+
+    Previously, identical y_preds values produced x_buffer=0, and constant
+    residuals produced y_limit=0, both triggering matplotlib's
+    'identical low and high lims makes transformation singular' warning.
+    """
+    import warnings
+
+    from dsr_feature_eng_ml.enums import ModelType
+
+    renderer = AuditPDFRenderer(summary=populated_summary)
+    y_true = pd.Series([20.0] * 10)
+    y_preds = pd.Series([20.0] * 10)
+    model_name = ModelType.RANDOM_FOREST_REGRESSOR.value
+    fig, ax = plt.subplots()
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            renderer._plot_regression_residuals(ax, y_true, y_preds, model_name=model_name)
+    finally:
+        plt.close(fig)

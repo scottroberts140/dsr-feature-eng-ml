@@ -1979,12 +1979,12 @@ class AuditPDFRenderer:
             """
             # Symmetric Y-limit ensures the 0-line remains the visual equator
             limit_val = float(np.percentile(np.abs(residuals), percentile * 100))
-            y_limit = limit_val * 1.1  # 10% breathing room
+            y_limit = max(limit_val * 1.1, 1.0)  # 10% breathing room; min span guards constant residuals
 
             # X-limit (Predicted Values) clipping to avoid extreme outlier stretching
             x_min = float(np.percentile(y_preds, (1 - percentile) * 100))
             x_max = float(np.percentile(y_preds, percentile * 100))
-            x_buffer = (x_max - x_min) * 0.05
+            x_buffer = max((x_max - x_min) * 0.05, 1.0)  # min span guards constant predictions
 
             return (-y_limit, y_limit), (x_min - x_buffer, x_max + x_buffer)
 
