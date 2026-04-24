@@ -104,9 +104,52 @@ class ModelAuditor:
 
         self.current_phase = ModelAuditor.phase_number
 
-        # Filter features eligible for training
-        self.features_to_fit_set: set[FeatureMetadata] = FeatureMetadata.dict_to_set(
-            feature_dict=config.features, target_column=config.data_splits.target_column
+        # Filter features eligible for training and align with transformed columns.
+        self.features_to_fit_set = self._resolve_features_to_fit_set()
+
+    def _resolve_features_to_fit_set(self) -> set[FeatureMetadata]:
+        """Resolve fit features against transformed split columns.
+
+        If a configured feature was one-hot encoded, this expands it into its
+        dummy columns and keeps a parent_name link to the original feature.
+        """
+        target_column = self.config.data_splits.target_column
+        available_columns = self.config.data_splits.train_features.columns
+        available_set = set(available_columns)
+
+        resolved: set[FeatureMetadata] = set()
+
+        for feature in self.config.features.values():
+            if not feature.is_used_in_fit or feature.name == target_column:
+                continue
+
+            if feature.name in available_set:
+                resolved.add(feature)
+                continue
+
+            encoded_columns = sorted(
+                col for col in available_columns if col.startswith(f"{feature.name}_")
+            )
+            for i, encoded_col in enumerate(encoded_columns, start=1):
+                resolved.add(
+                    FeatureMetadata(
+                        name=encoded_col,
+                        id=f"{feature.id}_{i:02d}",
+                        position=available_columns.tolist().index(encoded_col),
+                        short_name=feature.short_name,
+                        formatter=feature.formatter,
+                        description=feature.description,
+                        is_used_in_fit=True,
+                        parent_name=feature.name,
+                    )
+                )
+
+        if resolved:
+            return resolved
+
+        return FeatureMetadata.dict_to_set(
+            feature_dict=self.config.features,
+            target_column=target_column,
         )
 
     def run_audit(

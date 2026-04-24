@@ -642,6 +642,16 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             valid_params = est.get_params().keys()
             clean_grid = {}
             for k, v in raw_grid.items():
+                # Skip unset knobs; passing None through CV search can override
+                # estimator defaults and trigger deprecation/inconsistency warnings.
+                if v is None:
+                    continue
+
+                # sklearn LogisticRegression deprecates explicit 'penalty'.
+                # We configure it through l1_ratio/C in the estimator factory.
+                if est.__class__.__name__ == "LogisticRegression" and k == "penalty":
+                    continue
+
                 if k in valid_params:
                     # CV Searchers require iterables or distributions
                     clean_grid[k] = (

@@ -602,6 +602,7 @@ class DataSplits:
         scale_features: bool = True,
         shuffle: bool = True,
         stratify: bool = False,
+        skip_encoding: list[str] | None = None,
     ) -> DataSplits:
         """
         Create DataSplits from a source DataFrame with automatic splitting.
@@ -632,6 +633,11 @@ class DataSplits:
             Whether to shuffle data before splitting.
         stratify : bool, default False
             Whether to use stratified splitting based on target.
+        skip_encoding : list[str], optional
+            Column names to exclude from automatic one-hot encoding. These
+            columns are coerced to numeric and passed through as-is. Useful
+            for integer-coded categoricals (e.g. location IDs, codes) where
+            tree models can use the raw numeric values directly.
         """
         target = src[target_column]
         features = src[features_to_include]
@@ -661,6 +667,44 @@ class DataSplits:
         scaler_to_store: StandardScaler | None = None
 
         # 3. Transform features into model-ready numeric matrices.
+        # Convert skip_encoding columns to numeric before type detection.
+        # If conversion yields all-NaN in training data, fall back to one-hot
+        # encoding for that column to avoid invalid scaler stats.
+        if skip_encoding:
+            skip_set = set(skip_encoding)
+            original_splits = {
+                "train": train_feat.copy(),
+                "val": val_feat.copy(),
+                "test": test_feat.copy(),
+            }
+            for split_df in [train_feat, val_feat, test_feat]:
+                for col in skip_set:
+                    if col in split_df.columns:
+                        split_df[col] = pd.to_numeric(split_df[col], errors="coerce")
+            fallback_cols: list[str] = []
+            for col in sorted(skip_set & set(train_feat.columns)):
+                if train_feat[col].notna().sum() == 0:
+                    fallback_cols.append(col)
+
+            if fallback_cols:
+                for col in fallback_cols:
+                    train_feat[col] = original_splits["train"][col]
+                    val_feat[col] = original_splits["val"][col]
+                    test_feat[col] = original_splits["test"][col]
+                print(
+                    f"INFO: skip_encoding fallback to one-hot for {len(fallback_cols)} "
+                    f"column(s) with non-numeric values: {fallback_cols}"
+                )
+
+                skip_set -= set(fallback_cols)
+            if skip_set:
+                present = sorted(skip_set & set(train_feat.columns))
+                if present:
+                    print(
+                        f"INFO: One-hot encoding skipped for {len(present)} "
+                        f"column(s): {present}"
+                    )
+
         numeric_cols = train_feat.select_dtypes(include=[np.number]).columns.tolist()
         categorical_cols = train_feat.select_dtypes(
             exclude=[np.number]
@@ -1919,6 +1963,7 @@ class ModelAuditorConfig:
         optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
         task_type: TaskType = TaskType.CLASSIFICATION,
         features: dict[str, FeatureMetadata] | None = None,
+        skip_encoding: list[str] | None = None,
         **kwargs: Any,
     ) -> ModelAuditorConfig:
         """
@@ -1972,6 +2017,7 @@ class ModelAuditorConfig:
             original_row_count=original_row_count,
             random_state=random_state,
             scale_features=scale_features,
+            skip_encoding=skip_encoding,
         )
 
         # 2. Setup defaults for mutable types

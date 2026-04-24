@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Type, cast, get_args
+from typing import Any, Literal, Optional, Type, TypeVar, cast, get_args
 
 from dsr_utils import format_label_value_pairs
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -26,6 +26,21 @@ from dsr_feature_eng_ml.prefs_instance import prefs
 DTCriterion = Literal["gini", "entropy", "log_loss"]
 DTRCriterion = Literal["squared_error", "friedman_mse", "absolute_error", "poisson"]
 
+T = TypeVar("T")
+
+
+def _normalize_estimator_param(value: T | list[T] | tuple[T, ...], name: str) -> T:
+    """Return a scalar value for estimator construction.
+
+    When model params are configured as search spaces (lists/tuples),
+    scikit-learn estimators still require scalar constructor args.
+    """
+    if isinstance(value, (list, tuple)):
+        if not value:
+            raise ValueError(f"Parameter '{name}' cannot be an empty list or tuple.")
+        return value[0]
+    return value
+
 
 @dataclass(frozen=True)
 class DecisionTreeParams(ModelParams):
@@ -39,9 +54,9 @@ class DecisionTreeParams(ModelParams):
 
     criterion: str = "gini"
     splitter: Literal["best", "random"] = "best"
-    max_depth: Optional[int] = None
-    min_samples_split: int | float = 2
-    min_samples_leaf: int | float = 1
+    max_depth: Optional[int] | list[Optional[int]] = None
+    min_samples_split: int | float | list[int | float] = 2
+    min_samples_leaf: int | float | list[int | float] = 1
     min_weight_fraction_leaf: float = 0.0
     max_features: int | float | Literal["sqrt", "log2"] | None = None
     max_leaf_nodes: Optional[int] = None
@@ -184,13 +199,20 @@ class DecisionTreeClassifierModel(
     ) -> DecisionTreeClassifier:
         p = parameters or self.model_dials
         crit = p.criterion if p.criterion in get_args(DTCriterion) else "gini"
+        max_depth = _normalize_estimator_param(p.max_depth, "max_depth")
+        min_samples_split = _normalize_estimator_param(
+            p.min_samples_split, "min_samples_split"
+        )
+        min_samples_leaf = _normalize_estimator_param(
+            p.min_samples_leaf, "min_samples_leaf"
+        )
         return DecisionTreeClassifier(
             criterion=cast(DTCriterion, crit),
             class_weight=p.class_weight,
             splitter=p.splitter,
-            max_depth=p.max_depth,
-            min_samples_split=p.min_samples_split,
-            min_samples_leaf=p.min_samples_leaf,
+            max_depth=cast(int | None, max_depth),
+            min_samples_split=cast(int | float, min_samples_split),
+            min_samples_leaf=cast(int | float, min_samples_leaf),
             min_weight_fraction_leaf=p.min_weight_fraction_leaf,
             max_features=p.max_features,
             random_state=p.random_state,
@@ -265,12 +287,19 @@ class DecisionTreeRegressorModel(
     ) -> DecisionTreeRegressor:
         p = parameters or self.model_dials
         crit = p.criterion if p.criterion in get_args(DTRCriterion) else "squared_error"
+        max_depth = _normalize_estimator_param(p.max_depth, "max_depth")
+        min_samples_split = _normalize_estimator_param(
+            p.min_samples_split, "min_samples_split"
+        )
+        min_samples_leaf = _normalize_estimator_param(
+            p.min_samples_leaf, "min_samples_leaf"
+        )
         return DecisionTreeRegressor(
             criterion=cast(DTRCriterion, crit),
             splitter=p.splitter,
-            max_depth=p.max_depth,
-            min_samples_split=p.min_samples_split,
-            min_samples_leaf=p.min_samples_leaf,
+            max_depth=cast(int | None, max_depth),
+            min_samples_split=cast(int | float, min_samples_split),
+            min_samples_leaf=cast(int | float, min_samples_leaf),
             min_weight_fraction_leaf=p.min_weight_fraction_leaf,
             max_features=p.max_features,
             random_state=p.random_state,

@@ -180,6 +180,20 @@ class ModelAuditSummary:
             target_column=self.data_splits.target_column,
         )
 
+    def resolve_feature(self, col_name: str) -> "FeatureMetadata | None":
+        """Look up FeatureMetadata by name, falling back to parent for OHE columns.
+
+        When one-hot encoding produces columns like ``DOLocationID_71``, this
+        method finds the parent ``DOLocationID`` entry so formatters and short
+        names are available even for encoded variants.
+        """
+        if col_name in self.features:
+            return self.features[col_name]
+        for key in self.features:
+            if col_name.startswith(f"{key}_"):
+                return self.features[key]
+        return None
+
     @property
     def features_to_fit_set(self) -> set[FeatureMetadata]:
         """Set of features eligible for model fitting."""

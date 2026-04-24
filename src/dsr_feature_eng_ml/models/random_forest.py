@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping, Optional, Type, cast, get_args
+from typing import Any, Literal, Mapping, Optional, Type, TypeVar, cast, get_args
 
 from dsr_utils import format_label_value_pairs
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -26,6 +26,21 @@ from dsr_feature_eng_ml.prefs_instance import prefs
 RFCriterion = Literal["gini", "entropy", "log_loss"]
 RFRCriterion = Literal["squared_error", "absolute_error", "friedman_mse", "poisson"]
 
+T = TypeVar("T")
+
+
+def _normalize_estimator_param(value: T | list[T] | tuple[T, ...], name: str) -> T:
+    """Return a scalar value for estimator construction.
+
+    When model params are configured as search spaces (lists/tuples),
+    scikit-learn estimators still require scalar constructor args.
+    """
+    if isinstance(value, (list, tuple)):
+        if not value:
+            raise ValueError(f"Parameter '{name}' cannot be an empty list or tuple.")
+        return value[0]
+    return value
+
 
 @dataclass(frozen=True)
 class RandomForestParams(ModelParams):
@@ -38,10 +53,10 @@ class RandomForestParams(ModelParams):
     """
 
     criterion: str = "gini"
-    max_depth: int | None = None
-    n_estimators: int = 100
-    min_samples_split: int | float = 2
-    min_samples_leaf: int | float = 1
+    max_depth: int | None | list[int | None] = None
+    n_estimators: int | list[int] = 100
+    min_samples_split: int | float | list[int | float] = 2
+    min_samples_leaf: int | float | list[int | float] = 1
     max_features: float | Literal["sqrt", "log2"] | None = "sqrt"
     bootstrap: bool = True
 
@@ -209,13 +224,21 @@ class RandomForestClassifierModel(
         """Instantiate a raw Scikit-Learn RandomForestClassifier estimator."""
         p = parameters or self.model_dials
         crit = p.criterion if p.criterion in get_args(RFCriterion) else "gini"
+        n_estimators = _normalize_estimator_param(p.n_estimators, "n_estimators")
+        max_depth = _normalize_estimator_param(p.max_depth, "max_depth")
+        min_samples_split = _normalize_estimator_param(
+            p.min_samples_split, "min_samples_split"
+        )
+        min_samples_leaf = _normalize_estimator_param(
+            p.min_samples_leaf, "min_samples_leaf"
+        )
         return RandomForestClassifier(
             criterion=cast(RFCriterion, crit),
             class_weight=p.class_weight,
-            n_estimators=p.n_estimators,
-            max_depth=p.max_depth,
-            min_samples_split=p.min_samples_split,
-            min_samples_leaf=p.min_samples_leaf,
+            n_estimators=cast(int, n_estimators),
+            max_depth=cast(int | None, max_depth),
+            min_samples_split=cast(int | float, min_samples_split),
+            min_samples_leaf=cast(int | float, min_samples_leaf),
             max_features=cast(float | Literal["sqrt", "log2"], p.max_features),
             random_state=p.random_state,
             bootstrap=p.bootstrap,
@@ -290,12 +313,20 @@ class RandomForestRegressorModel(
         """Instantiate a raw Scikit-Learn RandomForestRegressor estimator."""
         p = parameters or self.model_dials
         crit = p.criterion if p.criterion in get_args(RFRCriterion) else "squared_error"
+        n_estimators = _normalize_estimator_param(p.n_estimators, "n_estimators")
+        max_depth = _normalize_estimator_param(p.max_depth, "max_depth")
+        min_samples_split = _normalize_estimator_param(
+            p.min_samples_split, "min_samples_split"
+        )
+        min_samples_leaf = _normalize_estimator_param(
+            p.min_samples_leaf, "min_samples_leaf"
+        )
         return RandomForestRegressor(
             criterion=cast(RFRCriterion, crit),
-            n_estimators=p.n_estimators,
-            max_depth=p.max_depth,
-            min_samples_split=p.min_samples_split,
-            min_samples_leaf=p.min_samples_leaf,
+            n_estimators=cast(int, n_estimators),
+            max_depth=cast(int | None, max_depth),
+            min_samples_split=cast(int | float, min_samples_split),
+            min_samples_leaf=cast(int | float, min_samples_leaf),
             max_features=cast(float | Literal["sqrt", "log2"], p.max_features),
             random_state=p.random_state,
             bootstrap=p.bootstrap,

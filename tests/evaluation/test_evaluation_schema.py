@@ -451,3 +451,31 @@ def test_risk_threshold_loading():
     # Matches the 'Drift: 3.811%' logic on Page 6
     assert config.drift_threshold > 0.0
     assert config.anomaly_threshold > 0.0
+
+
+def test_data_splits_skip_encoding_falls_back_for_non_numeric_columns(capsys):
+    """Verify string skip_encoding columns fall back to one-hot encoding."""
+    df = pd.DataFrame(
+        {
+            "city": ["A", "B", "A", "C", "B", "C", "A", "B", "C", "A"],
+            "num": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        }
+    )
+
+    splits = DataSplits.from_data_source(
+        src=df,
+        features_to_include=["city", "num"],
+        target_column="target",
+        test_size=0.2,
+        valid_size=0.25,
+        original_row_count=len(df),
+        random_state=42,
+        scale_features=True,
+        skip_encoding=["city"],
+    )
+
+    captured = capsys.readouterr()
+    assert "skip_encoding fallback to one-hot" in captured.out
+    assert any(col.startswith("city_") for col in splits.train_features.columns)
+    assert not splits.train_features["num"].isna().all()

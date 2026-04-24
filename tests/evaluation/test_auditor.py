@@ -117,6 +117,41 @@ def test_auditor_trace_logging(mini_taxi_df, tmp_path):
     assert "Auditing RANDOM_FOREST_REGRESSOR" in log_files[0].read_text()
 
 
+def test_feature_alignment_for_one_hot_encoded_columns():
+    """Configured categorical features should expand to one-hot columns for fit."""
+    row_count = 30
+    df = pd.DataFrame(
+        {
+            "RatecodeID": pd.Series(([1, 2, 3] * 10), dtype="category"),
+            "payment_type": pd.Series(([1, 2] * 15), dtype="category"),
+            "trip_distance": [float(i % 9 + 1) for i in range(row_count)],
+            "fare_amount": [float(i % 40 + 5) for i in range(row_count)],
+        }
+    )
+
+    features = FeatureMetadata.from_df(df=df, exclude_from_fit={"fare_amount"})
+
+    config = ModelAuditorConfig.from_dataset(
+        dataset=df,
+        original_row_count=row_count,
+        target_column="fare_amount",
+        dataset_name="OneHot Align Test",
+        cv=2,
+        model_classes=[RandomForestRegressorModel],
+        task_type=TaskType.REGRESSION,
+        features=features,
+    )
+
+    auditor = ModelAuditor(config)
+    fit_feature_names = {f.name for f in auditor.features_to_fit_set}
+
+    assert "RatecodeID" not in fit_feature_names
+    assert "payment_type" not in fit_feature_names
+    assert any(name.startswith("RatecodeID_") for name in fit_feature_names)
+    assert any(name.startswith("payment_type_") for name in fit_feature_names)
+    assert fit_feature_names.issubset(set(config.data_splits.train_features.columns))
+
+
 def test_model_viability_pruning(mini_taxi_df):
     """
     Verify that models with a large score gap are pruned from the config.

@@ -510,7 +510,8 @@ class AuditPDFRenderer:
                     # If anomalies share the same value for a high-kurtosis feature
                     if frequency >= self.summary.anomaly_risk_concentration_threshold:
                         # Format the value for the report
-                        feat_fmt = self.summary.features[feat].formatter
+                        feat_meta = self.summary.resolve_feature(feat)
+                        feat_fmt = feat_meta.formatter if feat_meta else StringFormat()
                         val_str = feat_fmt.format_value(mode_val[0])
                         msg = f"CONCENTRATED RISK: {risk_percentage_format.format_value(frequency)} of top errors share {feat}='{val_str}'."
                         potential_concentrated_risks.append((frequency, msg))
@@ -855,7 +856,12 @@ class AuditPDFRenderer:
             )
         )
         short_names = list(
-            dict.fromkeys([self.summary.features[f].short_name for f in resolved_f])
+            dict.fromkeys(
+                [
+                    (m := self.summary.resolve_feature(f)) and m.short_name or f
+                    for f in resolved_f
+                ]
+            )
         )
 
         # Define primary error-tracking columns
@@ -896,7 +902,8 @@ class AuditPDFRenderer:
             elif feat == AUDIT_ANOMALY_ABS_ERROR_COL:
                 fmt = self.summary.abs_error_fmt or FloatFormat()
             else:
-                fmt = self.summary.features[feat].formatter
+                feat_meta = self.summary.resolve_feature(feat)
+                fmt = feat_meta.formatter if feat_meta else StringFormat()
 
             col_formats[feat] = fmt
             align = fmt.matplot_alignment()

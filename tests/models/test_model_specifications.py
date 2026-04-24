@@ -259,6 +259,74 @@ def test_audit_risk_profile_detection(mini_taxi_df):
     assert kurtosis_val > 3.0
 
 
+def test_random_forest_regressor_params_allow_list_values():
+    """Estimator creation should accept list-valued RF params (search-space style)."""
+    params = RandomForestRegressorParams(
+        n_estimators=[50, 100],
+        max_depth=[10, 20],
+        min_samples_leaf=[1, 5],
+        min_samples_split=[2, 4],
+    )
+    model = RandomForestRegressorModel(cv=None, balancing_strategy=None, params=params)
+
+    estimator = model.create_estimator()
+    est_params = estimator.get_params()
+    assert est_params["n_estimators"] == 50
+    assert est_params["max_depth"] == 10
+    assert est_params["min_samples_leaf"] == 1
+    assert est_params["min_samples_split"] == 2
+
+
+def test_decision_tree_regressor_params_allow_list_values():
+    """Estimator creation should accept list-valued DT params (search-space style)."""
+    params = DecisionTreeRegressorParams(
+        max_depth=[5, 10],
+        min_samples_leaf=[1, 3],
+        min_samples_split=[2, 6],
+    )
+    model = DecisionTreeRegressorModel(cv=None, balancing_strategy=None, params=params)
+
+    estimator = model.create_estimator()
+    est_params = estimator.get_params()
+    assert est_params["max_depth"] == 5
+    assert est_params["min_samples_leaf"] == 1
+    assert est_params["min_samples_split"] == 2
+
+
+def test_random_forest_classifier_params_allow_list_values():
+    """Classifier estimator creation should accept list-valued RF params."""
+    params = RandomForestClassifierParams(
+        n_estimators=[75, 150],
+        max_depth=[8, 16],
+        min_samples_leaf=[1, 2],
+        min_samples_split=[2, 5],
+    )
+    model = RandomForestClassifierModel(cv=None, balancing_strategy=None, params=params)
+
+    estimator = model.create_estimator()
+    est_params = estimator.get_params()
+    assert est_params["n_estimators"] == 75
+    assert est_params["max_depth"] == 8
+    assert est_params["min_samples_leaf"] == 1
+    assert est_params["min_samples_split"] == 2
+
+
+def test_decision_tree_classifier_params_allow_list_values():
+    """Classifier estimator creation should accept list-valued DT params."""
+    params = DecisionTreeClassifierParams(
+        max_depth=[4, 9],
+        min_samples_leaf=[1, 2],
+        min_samples_split=[2, 4],
+    )
+    model = DecisionTreeClassifierModel(cv=None, balancing_strategy=None, params=params)
+
+    estimator = model.create_estimator()
+    est_params = estimator.get_params()
+    assert est_params["max_depth"] == 4
+    assert est_params["min_samples_leaf"] == 1
+    assert est_params["min_samples_split"] == 2
+
+
 def test_recommendation_page_logic():
     """Verify the strategic verdict logic for the winning model."""
     winning_model_name = "Random Forest Regressor"
