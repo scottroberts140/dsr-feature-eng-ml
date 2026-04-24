@@ -10,10 +10,12 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 import pandas as pd
+from cloudpathlib import AnyPath
 from dsr_files.csv_handler import save_csv
 from dsr_files.excel_handler import ExcelSheetConfig, save_excel
 from dsr_files.joblib_handler import save_joblib
 from dsr_files.json_handler import save_json
+from dsr_files.utils import PathLike
 from dsr_utils.enums import StringCase
 from dsr_utils.formatting import (
     DateTimeFormat,
@@ -731,7 +733,7 @@ class ModelAuditSummary:
         self,
         prefix: str,
         file_type: FileType,
-        path: Path,
+        path: PathLike,
         path_is_full_path: bool = False,
         append_timestamp_to_save_path: bool = False,
         report_title: str = "Model Audit Report",
@@ -745,7 +747,7 @@ class ModelAuditSummary:
             Filename prefix (e.g., "Audit_State").
         file_type : FileType
             A single FileType or bitmask of types to generate.
-        path : Path
+        path : str | Path | CloudPath
             Output directory or full file path.
         path_is_full_path : bool, default False
             If True, treats 'path' as the final destination file.
@@ -764,13 +766,14 @@ class ModelAuditSummary:
 
         # 1. Resolve Pathing and Filenames
         if not path_is_full_path:
-            output_dir = Path(path)
+            output_dir = AnyPath(path)
             if append_timestamp_to_save_path:
                 output_dir = output_dir / self.audit_timestamp
             filename = f"{prefix}_{self.audit_timestamp}"
         else:
-            output_dir = path.parent
-            filename = path.stem
+            full_path_obj = AnyPath(path)
+            output_dir = full_path_obj.parent
+            filename = full_path_obj.stem
 
         output_dir.mkdir(parents=True, exist_ok=True)
         full_path = Path()
@@ -857,7 +860,7 @@ class ModelAuditSummary:
         return full_path
 
     def evaluate_test_model(
-        self, index: int, joblib_fullpath: Path | None = None
+        self, index: int, joblib_fullpath: PathLike | None = None
     ) -> None:
         """
         Evaluate a single model on the test set and optionally persist state.
@@ -866,7 +869,7 @@ class ModelAuditSummary:
         ----------
         index : int
             Index of the model configuration in the results list.
-        joblib_fullpath : Path, optional
+        joblib_fullpath : str | Path | CloudPath, optional
             Path to update the .joblib snapshot immediately after evaluation.
         """
         if index >= len(self.results):
@@ -902,14 +905,16 @@ class ModelAuditSummary:
                     append_timestamp_to_save_path=False,
                     path_is_full_path=True,
                 )
-                print(f"Audit snapshot updated on disk: {joblib_fullpath.name}")
+                print(
+                    f"Audit snapshot updated on disk: {AnyPath(joblib_fullpath).name}"
+                )
         else:
             print(
                 f"Warning: Unable to instantiate {config.model_type.name} specification."
             )
 
     def evaluate_test_models(
-        self, indexes: list[int], joblib_fullpath: Path | None = None
+        self, indexes: list[int], joblib_fullpath: PathLike | None = None
     ) -> None:
         """
         Evaluate a specific list of model indices on the test set.
@@ -918,19 +923,19 @@ class ModelAuditSummary:
         ----------
         indexes : list[int]
             List of result indices to process.
-        joblib_fullpath : Path, optional
+        joblib_fullpath : str | Path | CloudPath, optional
             Path to update the .joblib snapshot after each evaluation.
         """
         for index in indexes:
             self.evaluate_test_model(index=index, joblib_fullpath=joblib_fullpath)
 
-    def evaluate_all_test_models(self, joblib_fullpath: Path | None = None) -> None:
+    def evaluate_all_test_models(self, joblib_fullpath: PathLike | None = None) -> None:
         """
         Evaluate every model in the results list on the test set.
 
         Parameters
         ----------
-        joblib_fullpath : Path, optional
+        joblib_fullpath : str | Path | CloudPath, optional
             Path to update the .joblib snapshot during the process.
         """
         # Iterate over all indices in the current results list

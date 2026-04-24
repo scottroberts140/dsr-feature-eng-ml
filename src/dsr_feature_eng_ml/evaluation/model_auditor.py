@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from cloudpathlib import AnyPath
+from dsr_files.utils import PathLike
 from dsr_utils.formatting import DateTimeFormat, EnumFormat, IntegerFormat
 
 from dsr_feature_eng_ml.enums import OptimizationStrategy
@@ -24,18 +26,18 @@ class AuditLogger:
     console and a specified file, providing a persistent record of the audit.
     """
 
-    def __init__(self, file_path: str | Path):
+    def __init__(self, file_path: PathLike):
         """
         Initialize the logger and open the target log file.
 
         Parameters
         ----------
-        file_path : str | Path
+        file_path : str | Path | CloudPath
             The destination path for the audit log file.
         """
         self.terminal = sys.stdout
         # We use 'w' to overwrite previous audits; change to 'a' if appending is preferred.
-        self.log = open(file_path, "w", encoding="utf-8")
+        self.log = AnyPath(file_path).open("w", encoding="utf-8")
 
     def write(self, message: str) -> None:
         """Write a message to both the terminal and the log file."""
@@ -110,7 +112,7 @@ class ModelAuditor:
     def run_audit(
         self,
         optimize: bool = True,
-        save_path: str | Path | None = None,
+        save_path: PathLike | None = None,
         append_timestamp_to_save_path: bool = False,
         max_sample_size: int | None = None,
         perform_memory_check: bool = True,
@@ -125,14 +127,14 @@ class ModelAuditor:
         ----------
         optimize : bool, default True
             Run hyperparameter tuning before the final fit.
-        save_path : str | Path, optional
+        save_path : str | Path | CloudPath, optional
             Base directory for logs and exports.
         max_sample_size : int, optional
             Cap on training rows used during the tuning phase.
         perform_memory_check : bool, default True
             Calculate memory risk/headroom before tuning.
         """
-        base_dir = Path(save_path) if save_path else Path.cwd()
+        base_dir = AnyPath(save_path) if save_path else Path.cwd()
 
         if append_timestamp_to_save_path:
             base_dir = base_dir / self.summary.audit_timestamp

@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* **CloudPath Save Compatibility**: Updated `ModelAuditor.run_audit` and `ModelAuditSummary.export_results` to accept `CloudPath` destinations for audit logs and snapshot exports, using protocol-aware path handling instead of forced local `Path(...)` coercion.
 * **String Target Scorer Compatibility**: Classification CV tuning now maps to weighted scorers (`f1_weighted`, `precision_weighted`, `recall_weighted`) to avoid `pos_label` errors with non-numeric labels.
 * **Classification Anomaly Logic**: Replaced residual subtraction on string labels with misclassification-based anomaly flags.
 * **Categorical Statistics Stability**: Added categorical target factorization in `ModelConfigurationStats` to prevent failures in mean/std/skew/kurtosis calculations.
