@@ -1617,6 +1617,8 @@ class AuditPDFRenderer:
         ax.legend(
             handles=[thresh_line],
             loc="upper right",
+            bbox_to_anchor=(1.0, 0.9),
+            bbox_transform=ax.transAxes,
             fontsize=7,
             frameon=True,
             borderpad=0.3,
