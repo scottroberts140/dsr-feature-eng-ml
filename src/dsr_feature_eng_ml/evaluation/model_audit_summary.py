@@ -611,13 +611,9 @@ class ModelAuditSummary:
         duration_seconds = float(meta["duration_seconds"])
         peak_ram_val = float(meta["aggregate_stats"]["peak_ram_gb"])
 
-        # `peak_ram_gb` historically stores bytes in some audit paths.
-        # Normalize to bytes for DataFormat so rendered output is always correct.
-        peak_ram_bytes = (
-            peak_ram_val
-            if peak_ram_val >= DataScale.GB.get_size()
-            else peak_ram_val * DataScale.GB.get_size()
-        )
+        # `peak_ram_gb` is stored in GB; convert to bytes for DataFormat,
+        # which handles scaling when configured with DataScale.GB.
+        peak_ram_bytes = peak_ram_val * DataScale.GB.get_size()
 
         # 1. Build Metadata Header
         header_pairs = [

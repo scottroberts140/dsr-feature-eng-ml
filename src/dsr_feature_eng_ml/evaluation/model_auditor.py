@@ -10,7 +10,7 @@ from typing import Any
 
 from cloudpathlib import AnyPath
 from dsr_files.utils import PathLike
-from dsr_utils.formatting import DateTimeFormat, EnumFormat, IntegerFormat
+from dsr_utils.formatting import DataScale, DateTimeFormat, EnumFormat, IntegerFormat
 
 from dsr_feature_eng_ml.enums import OptimizationStrategy
 from dsr_feature_eng_ml.evaluation.model_audit_summary import ModelAuditSummary
@@ -270,7 +270,7 @@ class ModelAuditor:
                         tuning_duration=tuning_dur,
                         fit_duration=fit_dur,
                         available_gb=avail_gb,
-                        actual_peak_gb=est_peak,  # Capture peak during fit
+                        estimated_peak_gb=DataScale.GB.get_scaled_value(est_peak),
                         memory_risk_triggered=mem_risk,
                         sampling_factor=samp_factor,
                         model_multiplier=mult,
