@@ -1337,6 +1337,14 @@ class AuditPDFRenderer:
         ds = self.summary.data_splits
         y_train, y_val = ds.train_target, ds.val_target
 
+        # Classification targets can be strings/categorical labels and do not
+        # support percentile/KDE numeric operations.
+        if not pd.api.types.is_numeric_dtype(y_train) or not pd.api.types.is_numeric_dtype(
+            y_val
+        ):
+            self._plot_categorical_target_distribution(ax=ax, y_train=y_train, y_val=y_val)
+            return
+
         # 1. Coordinate Percetile Clipping
         x_min, x_max = self._get_narrow_x_limit(y_train, y_val)
 
@@ -1447,6 +1455,58 @@ class AuditPDFRenderer:
         ax.set_xlabel(f"Target Value ({ds.target_column})")
         ax.set_ylabel("Frequency")
         ax.legend(fontsize=7, loc="upper left")
+
+    def _plot_categorical_target_distribution(
+        self, ax: Axes, y_train: pd.Series, y_val: pd.Series
+    ) -> None:
+        """Visualize class distribution overlap for non-numeric targets."""
+        ds = self.summary.data_splits
+
+        train_counts = y_train.astype("string").fillna("<NA>").value_counts()
+        val_counts = y_val.astype("string").fillna("<NA>").value_counts()
+
+        categories = sorted(set(train_counts.index).union(set(val_counts.index)))
+        x = np.arange(len(categories), dtype=float)
+        width = 0.4
+
+        train_values = [int(train_counts.get(category, 0)) for category in categories]
+        val_values = [int(val_counts.get(category, 0)) for category in categories]
+
+        ax.bar(
+            x - width / 2,
+            train_values,
+            width,
+            label="Train",
+            color=prefs.color_neutral,
+            alpha=0.75,
+        )
+        ax.bar(
+            x + width / 2,
+            val_values,
+            width,
+            label="Val",
+            color=prefs.color_classic_blue,
+            alpha=0.75,
+        )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(categories, rotation=45, ha="right", fontsize=8)
+        ax.set_title("Target Distribution by Class")
+        ax.set_xlabel(f"Class Label ({ds.target_column})")
+        ax.set_ylabel("Count")
+        ax.legend(fontsize=7, loc="upper right")
+
+        ax.text(
+            0.02,
+            0.98,
+            "Categorical target detected",
+            transform=ax.transAxes,
+            va="top",
+            ha="left",
+            fontsize=8,
+            style="italic",
+            color=prefs.color_neutral,
+        )
 
     def _plot_cumulative_importance(self, sns: Any, ax: Axes) -> None:
         """

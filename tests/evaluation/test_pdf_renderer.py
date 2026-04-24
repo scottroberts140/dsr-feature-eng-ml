@@ -1,5 +1,6 @@
 import dataclasses
 
+import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 from dsr_feature_eng_ml.enums import (
@@ -128,3 +129,29 @@ def test_renderer_toc_registration(populated_summary):
 
     # After render, the registry should contain references to the summary and deep dives
     assert len(pdf_doc.toc_pages) > 0
+
+
+def test_plot_target_distribution_handles_string_targets(populated_summary):
+    """Ensure categorical/string targets do not trigger numeric percentile errors."""
+    y_train = populated_summary.data_splits.train_target.map(
+        lambda x: "high" if x >= 30 else "low"
+    )
+    y_val = populated_summary.data_splits.val_target.map(
+        lambda x: "high" if x >= 30 else "low"
+    )
+
+    populated_summary.data_splits = dataclasses.replace(
+        populated_summary.data_splits,
+        train_target=y_train,
+        val_target=y_val,
+    )
+
+    renderer = AuditPDFRenderer(summary=populated_summary)
+    fig, ax = plt.subplots()
+    try:
+        renderer._plot_target_distribution(ax)
+    finally:
+        plt.close(fig)
+
+    assert ax.get_title() == "Target Distribution by Class"
+    assert len(ax.patches) > 0

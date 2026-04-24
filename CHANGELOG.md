@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **String Target Scorer Compatibility**: Classification CV tuning now maps to weighted scorers (`f1_weighted`, `precision_weighted`, `recall_weighted`) to avoid `pos_label` errors with non-numeric labels.
 * **Classification Anomaly Logic**: Replaced residual subtraction on string labels with misclassification-based anomaly flags.
 * **Categorical Statistics Stability**: Added categorical target factorization in `ModelConfigurationStats` to prevent failures in mean/std/skew/kurtosis calculations.
+* **PDF Categorical Target Distribution Rendering**: Updated `AuditPDFRenderer` target-distribution plotting to handle string/categorical targets with class-count bars instead of numeric percentile/KDE logic, preventing PDF export failures in classification audits.
 * **Empty Inverse Transform Guard**: `DataSplits.inverse_transform_df` now short-circuits on empty DataFrames to prevent scaler shape errors.
 * **Feature Metadata Initialization**: `ModelAuditorConfig.from_dataset` now auto-builds `FeatureMetadata` when not explicitly supplied, preventing empty fit-feature configurations.
 
