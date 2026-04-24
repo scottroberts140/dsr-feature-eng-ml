@@ -1543,8 +1543,10 @@ class AuditPDFRenderer:
         )
 
         # 2. Apply Multi-Colored Markers for Top Features
-        # We label the top 5 features or any feature required to hit 95%
+        # Color all dots up to the 95% threshold, but cap legend entries so
+        # the legend never obscures the chart on high-cardinality feature sets.
         n_labels = 5
+        MAX_LEGEND_ENTRIES = 10
         colors = sns.color_palette("tab10", n_colors=10)
         legend_handles = []
 
@@ -1553,7 +1555,7 @@ class AuditPDFRenderer:
             cum_imp = row["cumulative_importance"]
             feat_name = row["feature"]
 
-            # Visual logic to highlight key contributors
+            # Highlight every feature that contributes to the 95% threshold
             if i < n_labels or (
                 i > 0
                 and best_model_importance["cumulative_importance"].iloc[i - 1] < 0.95
@@ -1569,7 +1571,9 @@ class AuditPDFRenderer:
                     linestyle="None",
                     zorder=3,
                 )
-                legend_handles.append(dot[0])
+                # Only add to legend up to the cap to avoid chart overlap
+                if len(legend_handles) < MAX_LEGEND_ENTRIES:
+                    legend_handles.append(dot[0])
 
             # Stop highlighting once the 95% threshold is surpassed
             if cum_imp >= 0.95 and i >= n_labels:
@@ -1979,12 +1983,16 @@ class AuditPDFRenderer:
             """
             # Symmetric Y-limit ensures the 0-line remains the visual equator
             limit_val = float(np.percentile(np.abs(residuals), percentile * 100))
-            y_limit = max(limit_val * 1.1, 1.0)  # 10% breathing room; min span guards constant residuals
+            y_limit = max(
+                limit_val * 1.1, 1.0
+            )  # 10% breathing room; min span guards constant residuals
 
             # X-limit (Predicted Values) clipping to avoid extreme outlier stretching
             x_min = float(np.percentile(y_preds, (1 - percentile) * 100))
             x_max = float(np.percentile(y_preds, percentile * 100))
-            x_buffer = max((x_max - x_min) * 0.05, 1.0)  # min span guards constant predictions
+            x_buffer = max(
+                (x_max - x_min) * 0.05, 1.0
+            )  # min span guards constant predictions
 
             return (-y_limit, y_limit), (x_min - x_buffer, x_max + x_buffer)
 
