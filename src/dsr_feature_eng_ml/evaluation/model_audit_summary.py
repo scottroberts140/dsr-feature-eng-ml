@@ -18,6 +18,8 @@ from dsr_files.json_handler import save_json
 from dsr_files.utils import PathLike
 from dsr_utils.enums import StringCase
 from dsr_utils.formatting import (
+    DataFormat,
+    DataScale,
     DateTimeFormat,
     FloatFormat,
     FormatConfig,
@@ -601,6 +603,21 @@ class ModelAuditSummary:
         counts = meta["row_counts"]
 
         i_fmt = IntegerFormat()
+        dur_fmt = DateTimeFormat(use_duration_format=True)
+        ram_fmt = DataFormat(
+            data_scale=DataScale.GB, precision=2, include_space_before_scale=True
+        )
+
+        duration_seconds = float(meta["duration_seconds"])
+        peak_ram_val = float(meta["aggregate_stats"]["peak_ram_gb"])
+
+        # `peak_ram_gb` historically stores bytes in some audit paths.
+        # Normalize to bytes for DataFormat so rendered output is always correct.
+        peak_ram_bytes = (
+            peak_ram_val
+            if peak_ram_val >= DataScale.GB.get_size()
+            else peak_ram_val * DataScale.GB.get_size()
+        )
 
         # 1. Build Metadata Header
         header_pairs = [
@@ -612,8 +629,8 @@ class ModelAuditSummary:
                 f"{i_fmt.format_value(counts['val'])} / "
                 f"{i_fmt.format_value(counts['test'])}",
             ),
-            ("Duration", f"{meta['duration_seconds']:.2f}s"),
-            ("Peak RAM", f"{meta['aggregate_stats']['peak_ram_gb']:.2f} GB"),
+            ("Duration", dur_fmt.format_value(duration_seconds)),
+            ("Peak RAM", ram_fmt.format_value(peak_ram_bytes)),
         ]
 
         grid_pad = max((len(f.name) for f in self.features_used), default=10) + 4
