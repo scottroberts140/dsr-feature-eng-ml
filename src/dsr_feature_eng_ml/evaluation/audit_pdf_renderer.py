@@ -1599,8 +1599,8 @@ class AuditPDFRenderer:
             zorder=2,
         )
 
-        ax.legend(
-            handles=[thresh_line] + legend_handles,
+        feature_legend = ax.legend(
+            handles=legend_handles,
             loc="lower right",
             fontsize=7,
             frameon=True,
@@ -1609,6 +1609,19 @@ class AuditPDFRenderer:
             columnspacing=0.5,
             handletextpad=0.4,
             labelspacing=0.3,
+        )
+        ax.add_artist(feature_legend)
+
+        # Keep threshold in a separate compact legend to preserve 5x5 feature
+        # alignment while still explicitly labeling the dashed reference line.
+        ax.legend(
+            handles=[thresh_line],
+            loc="upper right",
+            fontsize=7,
+            frameon=True,
+            borderpad=0.3,
+            handlelength=1.8,
+            handletextpad=0.4,
         )
         # 4. Final Axes and Labeling
         ax.set_title(f"Cumulative Importance\n({best_model_name})")
