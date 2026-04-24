@@ -10,7 +10,7 @@ from dsr_feature_eng_ml.enums import (
     ScoringMetric,
     TaskType,
 )
-from dsr_feature_eng_ml.models.decision_tree import DecisionTree
+from dsr_feature_eng_ml.models.decision_tree import DecisionTreeRegressorModel
 from dsr_feature_eng_ml.models.model_specification import (
     ModelParams,
     ModelSpecification,
@@ -126,7 +126,7 @@ def test_model_specification_metric_validation():
     """Verify constructor raises error on task/metric mismatch."""
     with pytest.raises(ValueError, match="Invalid metric"):
         # F1 is invalid for a Regression task_type
-        DecisionTree(cv=5, task_type=TaskType.REGRESSION, scoring=ScoringMetric.F1)
+        DecisionTreeRegressorModel(cv=5, scoring=ScoringMetric.F1)
 
 
 def test_feature_importance_extraction_logic():

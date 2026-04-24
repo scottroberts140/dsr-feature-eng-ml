@@ -34,7 +34,10 @@ from dsr_feature_eng_ml.evaluation.schema import (
     ModelFeatureImportance,
 )
 from dsr_feature_eng_ml.models.lasso_regression import LassoRegression
-from dsr_feature_eng_ml.models.random_forest import RandomForest, RandomForestParams
+from dsr_feature_eng_ml.models.random_forest import (
+    RandomForestParams,
+    RandomForestRegressorModel,
+)
 
 
 def test_dataset_formatters_default_mapping():
@@ -398,7 +401,7 @@ def test_auditor_config_from_dataset(mini_taxi_df):
         target_column=target,
         dataset_name="Taxi Test",
         cv=3,
-        model_classes=[RandomForest, LassoRegression],
+        model_classes=[RandomForestRegressorModel, LassoRegression],
         balancing_strategies=[BalancingStrategy.NONE],
         task_type=TaskType.REGRESSION,
         random_state=42,
@@ -410,7 +413,7 @@ def test_auditor_config_from_dataset(mini_taxi_df):
 
     # 2. Verify model instantiation
     assert len(config.models_to_run) == 2
-    assert any(isinstance(m, RandomForest) for m in config.models_to_run)
+    assert any(isinstance(m, RandomForestRegressorModel) for m in config.models_to_run)
 
     # 3. Verify parameter propagation (e.g., CV)
     for model in config.models_to_run:
@@ -422,7 +425,7 @@ def test_n_jobs_propagation():
     # Create empty splits for manual instantiation
     empty_splits = DataSplits.empty()
 
-    m1 = RandomForest(cv=5, task_type=TaskType.REGRESSION)
+    m1 = RandomForestRegressorModel(cv=5)
     m2 = LassoRegression(cv=5, balancing_strategy=BalancingStrategy.NONE)
 
     config = ModelAuditorConfig(

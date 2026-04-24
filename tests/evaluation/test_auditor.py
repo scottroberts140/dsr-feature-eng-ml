@@ -23,7 +23,10 @@ from dsr_feature_eng_ml.evaluation.schema import (
     ModelConfiguration,
 )
 from dsr_feature_eng_ml.models.lasso_regression import LassoParams, LassoRegression
-from dsr_feature_eng_ml.models.random_forest import RandomForest, RandomForestParams
+from dsr_feature_eng_ml.models.random_forest import (
+    RandomForestParams,
+    RandomForestRegressorModel,
+)
 
 
 def test_audit_logger_redirection(tmp_path):
@@ -99,7 +102,7 @@ def test_auditor_trace_logging(mini_taxi_df, tmp_path):
         target_column="fare_amount",
         dataset_name="Taxi_Log_Test",
         cv=2,
-        model_classes=[RandomForest],
+        model_classes=[RandomForestRegressorModel],
         task_type=TaskType.REGRESSION,
         features=features,
     )
@@ -134,7 +137,7 @@ def test_model_viability_pruning(mini_taxi_df):
         target_column="fare_amount",
         dataset_name="Pruning_Test",
         cv=5,
-        model_classes=[RandomForest, LassoRegression],
+        model_classes=[RandomForestRegressorModel, LassoRegression],
         task_type=TaskType.REGRESSION,
         features=features,
     )
@@ -151,7 +154,7 @@ def test_model_viability_pruning(mini_taxi_df):
     # 2. Assert that the remaining model is either Lasso or RandomForest
     # In your current run, Lasso is the winner
     winner = config.models_to_run[0]
-    assert isinstance(winner, (RandomForest, LassoRegression))
+    assert isinstance(winner, (RandomForestRegressorModel, LassoRegression))
 
 
 @pytest.fixture

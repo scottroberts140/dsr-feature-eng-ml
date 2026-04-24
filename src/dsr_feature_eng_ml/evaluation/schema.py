@@ -1937,7 +1937,7 @@ class ModelAuditorConfig:
         cv : int
             Number of cross-validation folds.
         model_classes : Sequence[type[ModelSpecification]]
-            The list of model types to instantiate (e.g., [RandomForest, Lasso]).
+            The list of model types to instantiate (e.g., [RandomForestClassifierModel, LassoRegression]).
         model_params : dict[type[ModelSpecification], ModelParams], optional
             Per-class hyperparameter overrides. If None, each model uses its defaults.
         balancing_strategies : list[BalancingStrategy], optional
@@ -1987,33 +1987,6 @@ class ModelAuditorConfig:
         for m_cls in model_classes:
             base_params = m_params.get(m_cls)
 
-            # Normalize legacy base classes to task-specific wrappers so model
-            # construction does not depend on a task_type constructor argument.
-            resolved_model_cls = m_cls
-            from dsr_feature_eng_ml.models.decision_tree import (
-                DecisionTree,
-                DecisionTreeClassifierModel,
-                DecisionTreeRegressorModel,
-            )
-            from dsr_feature_eng_ml.models.random_forest import (
-                RandomForest,
-                RandomForestClassifierModel,
-                RandomForestRegressorModel,
-            )
-
-            if m_cls is DecisionTree:
-                resolved_model_cls = (
-                    DecisionTreeRegressorModel
-                    if task_type == TaskType.REGRESSION
-                    else DecisionTreeClassifierModel
-                )
-            elif m_cls is RandomForest:
-                resolved_model_cls = (
-                    RandomForestRegressorModel
-                    if task_type == TaskType.REGRESSION
-                    else RandomForestClassifierModel
-                )
-
             # Ensure params are updated with global state
             if base_params:
                 base_params = dataclasses.replace(
@@ -2023,7 +1996,7 @@ class ModelAuditorConfig:
 
             for strategy in b_strategies:
                 model_instance = ModelSpecification.instantiate_model(
-                    model_cls=resolved_model_cls,
+                    model_cls=m_cls,
                     strategy=strategy,
                     params=base_params,
                     cv=cv,

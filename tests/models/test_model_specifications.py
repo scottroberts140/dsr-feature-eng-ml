@@ -3,7 +3,11 @@ from typing import Type
 import pytest
 
 from dsr_feature_eng_ml.enums import ModelType, ScoringMetric, TaskType
-from dsr_feature_eng_ml.models.decision_tree import DecisionTree, DecisionTreeParams
+from dsr_feature_eng_ml.models.decision_tree import (
+    DecisionTreeClassifierModel,
+    DecisionTreeParams,
+    DecisionTreeRegressorModel,
+)
 from dsr_feature_eng_ml.models.elastic_net_regression import (
     ElasticNetParams,
     ElasticNetRegression,
@@ -18,32 +22,36 @@ from dsr_feature_eng_ml.models.logistic_regression import (
     LogisticRegressionParams,
 )
 from dsr_feature_eng_ml.models.model_specification import ModelParams
-from dsr_feature_eng_ml.models.random_forest import RandomForest, RandomForestParams
+from dsr_feature_eng_ml.models.random_forest import (
+    RandomForestClassifierModel,
+    RandomForestParams,
+    RandomForestRegressorModel,
+)
 from dsr_feature_eng_ml.models.ridge_regression import RidgeParams, RidgeRegression
 from dsr_feature_eng_ml.preferences import prefs
 
 # Define the contract: (Class, Expected ModelType, Expected TaskType, Scoring Metric)
 MODEL_CONTRACTS = [
     (
-        RandomForest,
+        RandomForestClassifierModel,
         ModelType.RANDOM_FOREST_CLASSIFIER,
         TaskType.CLASSIFICATION,
         ScoringMetric.F1,
     ),
     (
-        RandomForest,
+        RandomForestRegressorModel,
         ModelType.RANDOM_FOREST_REGRESSOR,
         TaskType.REGRESSION,
         ScoringMetric.R2,
     ),
     (
-        DecisionTree,
+        DecisionTreeClassifierModel,
         ModelType.DECISION_TREE_CLASSIFIER,
         TaskType.CLASSIFICATION,
         ScoringMetric.F1,
     ),
     (
-        DecisionTree,
+        DecisionTreeRegressorModel,
         ModelType.DECISION_TREE_REGRESSOR,
         TaskType.REGRESSION,
         ScoringMetric.R2,
@@ -82,11 +90,11 @@ def test_all_model_integrities(model_class, expected_type, expected_task, scorin
     """
     if scoring is not None:
         instance = model_class(
-            cv=None, balancing_strategy=None, task_type=expected_task, scoring=scoring
+            cv=None, balancing_strategy=None, scoring=scoring
         )
     else:
         instance = model_class(
-            cv=None, balancing_strategy=None, task_type=expected_task
+            cv=None, balancing_strategy=None
         )
 
     # 1. Identity Check

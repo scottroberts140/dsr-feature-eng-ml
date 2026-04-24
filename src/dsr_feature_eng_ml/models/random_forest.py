@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping, Optional, Type, cast, get_args
 
@@ -17,8 +16,9 @@ from dsr_feature_eng_ml.enums import (
     TaskType,
 )
 from dsr_feature_eng_ml.models.model_specification import (
+    ClassificationModelSpecification,
     ModelParams,
-    ModelSpecification,
+    RegressionModelSpecification,
 )
 from dsr_feature_eng_ml.prefs_instance import prefs
 
@@ -150,139 +150,12 @@ class RandomForestParams(ModelParams):
         return grid
 
 
-class RandomForest(
-    ModelSpecification[
-        RandomForestParams, RandomForestClassifier | RandomForestRegressor
-    ]
+class RandomForestClassifierModel(
+    ClassificationModelSpecification[RandomForestParams, RandomForestClassifier]
 ):
-    """Random forest specification for regression and classification."""
+    """Random forest model specification for classification tasks."""
 
     params_class = RandomForestParams
-
-    def __init__(
-        self,
-        cv: int | None,
-        balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[RandomForestParams] = None,
-        task_type: TaskType = TaskType.CLASSIFICATION,
-        scoring: Optional[ScoringMetric] = None,
-        n_jobs: int = 3,
-        n_iter: int = -1,
-        acceptable_gap: float = prefs.acceptable_gap,
-        large_gap: float = prefs.large_gap,
-        optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
-    ):
-        """Initialize the Random Forest model specification."""
-        resolved_scoring = scoring or (
-            ScoringMetric.R2 if task_type == TaskType.REGRESSION else ScoringMetric.F1
-        )
-
-        if params is None:
-            params = RandomForestParams.create_default(
-                task_type=task_type, scoring=resolved_scoring, random_state=1
-            )
-        else:
-            if params.task_type != task_type or (
-                scoring is not None and params.scoring != resolved_scoring
-            ):
-                params = dataclasses.replace(
-                    params,
-                    task_type=task_type,
-                    scoring=resolved_scoring,
-                )
-
-        self._model_dials = params
-        self._task_type = self.model_dials.task_type
-        self._scoring = self.model_dials.scoring
-
-        super().__init__(
-            cv=cv,
-            balancing_strategy=balancing_strategy,
-            n_jobs=n_jobs,
-            n_iter=n_iter,
-            acceptable_gap=acceptable_gap,
-            large_gap=large_gap,
-            optimization_strategy=optimization_strategy,
-        )
-
-        self._model_type = (
-            ModelType.RANDOM_FOREST_CLASSIFIER
-            if self.task_type == TaskType.CLASSIFICATION
-            else ModelType.RANDOM_FOREST_REGRESSOR
-        )
-        self.estimator = self.create_estimator()
-
-    @property
-    def task_type(self) -> TaskType:
-        return self._task_type
-
-    @property
-    def model_type(self) -> ModelType:
-        return self._model_type
-
-    @property
-    def scoring(self) -> ScoringMetric:
-        return self._scoring
-
-    @scoring.setter
-    def scoring(self, value: ScoringMetric) -> None:
-        self._scoring = value
-
-    @property
-    def model_dials(self) -> RandomForestParams:
-        return self._model_dials
-
-    @model_dials.setter
-    def model_dials(self, value: RandomForestParams) -> None:
-        self._model_dials = value
-
-    def get_estimator_class(
-        self,
-    ) -> Type[RandomForestClassifier | RandomForestRegressor]:
-        """Return the Scikit-Learn Random Forest class for the current task."""
-        return (
-            RandomForestClassifier
-            if self.task_type == TaskType.CLASSIFICATION
-            else RandomForestRegressor
-        )
-
-    def create_estimator(
-        self, parameters: Optional[RandomForestParams] = None
-    ) -> RandomForestClassifier | RandomForestRegressor:
-        """Instantiate a raw Scikit-Learn Random Forest estimator."""
-        p = parameters or self.model_dials
-
-        common = {
-            "n_estimators": p.n_estimators,
-            "max_depth": p.max_depth,
-            "min_samples_split": p.min_samples_split,
-            "min_samples_leaf": p.min_samples_leaf,
-            "max_features": p.max_features,
-            "random_state": p.random_state,
-            "bootstrap": p.bootstrap,
-            "n_jobs": self.n_jobs,
-        }
-
-        if self.task_type == TaskType.REGRESSION:
-            crit = (
-                p.criterion
-                if p.criterion in get_args(RFRCriterion)
-                else "squared_error"
-            )
-            return RandomForestRegressor(criterion=cast(RFRCriterion, crit), **common)
-
-        crit = p.criterion if p.criterion in get_args(RFCriterion) else "gini"
-        return RandomForestClassifier(
-            criterion=cast(RFCriterion, crit), class_weight=p.class_weight, **common
-        )
-
-
-class RandomForestClassifierModel(RandomForest):
-    """Task-specific random forest wrapper for classification models."""
-
-    @property
-    def task_type(self) -> TaskType:
-        return TaskType.CLASSIFICATION
 
     def __init__(
         self,
@@ -301,12 +174,17 @@ class RandomForestClassifierModel(RandomForest):
                 "RandomForestClassifierModel requires params.task_type == TaskType.CLASSIFICATION"
             )
 
+        if params is None:
+            params = RandomForestParams.create_default(
+                task_type=TaskType.CLASSIFICATION, scoring=scoring, random_state=1
+            )
+
+        self._model_dials = params
+        self._scoring = scoring
+
         super().__init__(
             cv=cv,
             balancing_strategy=balancing_strategy,
-            params=params,
-            task_type=TaskType.CLASSIFICATION,
-            scoring=scoring,
             n_jobs=n_jobs,
             n_iter=n_iter,
             acceptable_gap=acceptable_gap,
@@ -314,13 +192,59 @@ class RandomForestClassifierModel(RandomForest):
             optimization_strategy=optimization_strategy,
         )
 
-
-class RandomForestRegressorModel(RandomForest):
-    """Task-specific random forest wrapper for regression models."""
+        self._model_type = ModelType.RANDOM_FOREST_CLASSIFIER
+        self.estimator = self.create_estimator()
 
     @property
-    def task_type(self) -> TaskType:
-        return TaskType.REGRESSION
+    def scoring(self) -> ScoringMetric:
+        return self._scoring
+
+    @scoring.setter
+    def scoring(self, value: ScoringMetric) -> None:
+        self._scoring = value
+
+    @property
+    def model_type(self) -> ModelType:
+        return self._model_type
+
+    @property
+    def model_dials(self) -> RandomForestParams:
+        return self._model_dials
+
+    @model_dials.setter
+    def model_dials(self, value: RandomForestParams) -> None:
+        self._model_dials = value
+
+    def get_estimator_class(self) -> Type[RandomForestClassifier]:
+        """Return the Scikit-Learn RandomForestClassifier class."""
+        return RandomForestClassifier
+
+    def create_estimator(
+        self, parameters: Optional[RandomForestParams] = None
+    ) -> RandomForestClassifier:
+        """Instantiate a raw Scikit-Learn RandomForestClassifier estimator."""
+        p = parameters or self.model_dials
+        crit = p.criterion if p.criterion in get_args(RFCriterion) else "gini"
+        return RandomForestClassifier(
+            criterion=cast(RFCriterion, crit),
+            class_weight=p.class_weight,
+            n_estimators=p.n_estimators,
+            max_depth=p.max_depth,
+            min_samples_split=p.min_samples_split,
+            min_samples_leaf=p.min_samples_leaf,
+            max_features=p.max_features,
+            random_state=p.random_state,
+            bootstrap=p.bootstrap,
+            n_jobs=self.n_jobs,
+        )
+
+
+class RandomForestRegressorModel(
+    RegressionModelSpecification[RandomForestParams, RandomForestRegressor]
+):
+    """Random forest model specification for regression tasks."""
+
+    params_class = RandomForestParams
 
     def __init__(
         self,
@@ -339,15 +263,67 @@ class RandomForestRegressorModel(RandomForest):
                 "RandomForestRegressorModel requires params.task_type == TaskType.REGRESSION"
             )
 
+        if params is None:
+            params = RandomForestParams.create_default(
+                task_type=TaskType.REGRESSION, scoring=scoring, random_state=1
+            )
+
+        self._model_dials = params
+        self._scoring = scoring
+
         super().__init__(
             cv=cv,
             balancing_strategy=balancing_strategy,
-            params=params,
-            task_type=TaskType.REGRESSION,
-            scoring=scoring,
             n_jobs=n_jobs,
             n_iter=n_iter,
             acceptable_gap=acceptable_gap,
             large_gap=large_gap,
             optimization_strategy=optimization_strategy,
+        )
+
+        self._model_type = ModelType.RANDOM_FOREST_REGRESSOR
+        self.estimator = self.create_estimator()
+
+    @property
+    def scoring(self) -> ScoringMetric:
+        return self._scoring
+
+    @scoring.setter
+    def scoring(self, value: ScoringMetric) -> None:
+        self._scoring = value
+
+    @property
+    def model_type(self) -> ModelType:
+        return self._model_type
+
+    @property
+    def model_dials(self) -> RandomForestParams:
+        return self._model_dials
+
+    @model_dials.setter
+    def model_dials(self, value: RandomForestParams) -> None:
+        self._model_dials = value
+
+    def get_estimator_class(self) -> Type[RandomForestRegressor]:
+        """Return the Scikit-Learn RandomForestRegressor class."""
+        return RandomForestRegressor
+
+    def create_estimator(
+        self, parameters: Optional[RandomForestParams] = None
+    ) -> RandomForestRegressor:
+        """Instantiate a raw Scikit-Learn RandomForestRegressor estimator."""
+        p = parameters or self.model_dials
+        crit = (
+            p.criterion if p.criterion in get_args(RFRCriterion) else "squared_error"
+        )
+        return RandomForestRegressor(
+            criterion=cast(RFRCriterion, crit),
+            n_estimators=p.n_estimators,
+            max_depth=p.max_depth,
+            min_samples_split=p.min_samples_split,
+            min_samples_leaf=p.min_samples_leaf,
+            max_features=p.max_features,
+            random_state=p.random_state,
+            bootstrap=p.bootstrap,
+            n_jobs=self.n_jobs,
         )
