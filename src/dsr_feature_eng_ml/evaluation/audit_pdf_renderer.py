@@ -1547,13 +1547,23 @@ class AuditPDFRenderer:
         # the legend never obscures the chart on high-cardinality feature sets.
         n_labels = 5
         MAX_LEGEND_ENTRIES = 10
+        # Feature names longer than this are truncated and suffixed with [ID]
+        # so that one-hot-encoded column families remain identifiable while
+        # keeping legend labels narrow enough not to overlap the chart.
+        MAX_LABEL_CHARS = 16
         colors = sns.color_palette("tab10", n_colors=10)
         legend_handles = []
+
+        def _legend_label(name: str, fid: str) -> str:
+            if len(name) <= MAX_LABEL_CHARS:
+                return name
+            return name[:MAX_LABEL_CHARS].rstrip("_- ") + f"… [{fid}]"
 
         for i in range(len(best_model_importance)):
             row = best_model_importance.iloc[i]
             cum_imp = row["cumulative_importance"]
             feat_name = row["feature"]
+            feat_id = row.get("id", "")
 
             # Highlight every feature that contributes to the 95% threshold
             if i < n_labels or (
@@ -1561,13 +1571,14 @@ class AuditPDFRenderer:
                 and best_model_importance["cumulative_importance"].iloc[i - 1] < 0.95
             ):
                 dot_color = colors[i % len(colors)]
+                label = _legend_label(feat_name, feat_id)
                 dot = ax.plot(
                     i + 1,
                     cum_imp,
                     marker="o",
                     color=dot_color,
                     markersize=6,
-                    label=feat_name,
+                    label=label,
                     linestyle="None",
                     zorder=3,
                 )
@@ -1595,9 +1606,10 @@ class AuditPDFRenderer:
             frameon=True,
             title="Top Features",
             ncol=2,
-            columnspacing=0.8,
+            columnspacing=0.5,
+            handletextpad=0.4,
+            labelspacing=0.3,
         )
-
         # 4. Final Axes and Labeling
         ax.set_title(f"Cumulative Importance\n({best_model_name})")
         ax.set_xlabel("Number of Features")
