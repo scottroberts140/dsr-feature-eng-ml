@@ -1339,10 +1339,12 @@ class AuditPDFRenderer:
 
         # Classification targets can be strings/categorical labels and do not
         # support percentile/KDE numeric operations.
-        if not pd.api.types.is_numeric_dtype(y_train) or not pd.api.types.is_numeric_dtype(
-            y_val
-        ):
-            self._plot_categorical_target_distribution(ax=ax, y_train=y_train, y_val=y_val)
+        if not pd.api.types.is_numeric_dtype(
+            y_train
+        ) or not pd.api.types.is_numeric_dtype(y_val):
+            self._plot_categorical_target_distribution(
+                ax=ax, y_train=y_train, y_val=y_val
+            )
             return
 
         # 1. Coordinate Percetile Clipping
@@ -2249,7 +2251,6 @@ class AuditPDFRenderer:
 
         # Ensure validation predictions exist before attempting to find outliers
         if config.preds_val is not None:
-
             # 1. Regression Path: Focus on absolute magnitude of error
             if config.task_type == TaskType.REGRESSION:
                 self._plot_worst_residual_errors(
