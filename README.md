@@ -15,6 +15,8 @@ This suite provides a high-fidelity framework for training, evaluating, and audi
 ## Recent Improvements (Unreleased)
 
 * Added task-specialized model bases: `ClassificationModelSpecification` and `RegressionModelSpecification`.
+* Introduced `ClassificationModelParams` and `RegressionModelParams` abstract base dataclasses; single-task params classes now inherit task-appropriate defaults without redeclaring `task_type` or `scoring`.
+* Split `DecisionTreeParams` and `RandomForestParams` into abstract bases with task-specific concrete subclasses (`DecisionTreeClassifierParams`, `DecisionTreeRegressorParams`, `RandomForestClassifierParams`, `RandomForestRegressorParams`), removing runtime task-type guards from model constructors.
 * Simplified factory construction by removing explicit task routing from `instantiate_model` and normalizing legacy base classes to task-specific wrappers.
 * Updated fit-time memory telemetry to GB units and aligned related docstrings.
 * Added automatic one-hot encoding trace logging in `DataSplits.from_data_source` (including encoded source columns).

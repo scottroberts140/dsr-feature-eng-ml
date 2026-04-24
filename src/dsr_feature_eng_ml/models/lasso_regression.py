@@ -16,14 +16,14 @@ from dsr_feature_eng_ml.enums import (
     TaskType,
 )
 from dsr_feature_eng_ml.models.model_specification import (
-    ModelParams,
+    RegressionModelParams,
     RegressionModelSpecification,
 )
 from dsr_feature_eng_ml.preferences import prefs
 
 
 @dataclass(frozen=True)
-class LassoParams(ModelParams):
+class LassoParams(RegressionModelParams):
     """Hyperparameters for Lasso (L1) regression models."""
 
     alpha: float = 1.0
@@ -36,8 +36,6 @@ class LassoParams(ModelParams):
     positive: bool = False
     selection: Literal["cyclic", "random"] = "cyclic"
     random_state: Optional[int] = 1
-    task_type: TaskType = TaskType.REGRESSION
-    scoring: ScoringMetric = ScoringMetric.R2
 
     def info(self) -> str:
         """Format parameters for diagnostic display."""
@@ -89,9 +87,7 @@ class LassoRegression(RegressionModelSpecification[LassoParams, SklearnLasso]):
             params = LassoParams(task_type=task_type, scoring=scoring)
 
         self._model_dials = params
-        self._task_type = TaskType.REGRESSION  # Explicitly enforced for Lasso
         self._scoring = params.scoring
-        self._model_type = ModelType.LASSO
 
         # 2. Base Class Orchestration
         super().__init__(
@@ -111,10 +107,6 @@ class LassoRegression(RegressionModelSpecification[LassoParams, SklearnLasso]):
         return SklearnLasso
 
     @property
-    def task_type(self) -> TaskType:
-        return self._task_type
-
-    @property
     def scoring(self) -> ScoringMetric:
         return self._scoring
 
@@ -124,7 +116,7 @@ class LassoRegression(RegressionModelSpecification[LassoParams, SklearnLasso]):
 
     @property
     def model_type(self) -> ModelType:
-        return self._model_type
+        return ModelType.LASSO
 
     @property
     def model_dials(self) -> LassoParams:

@@ -2,8 +2,6 @@ import dataclasses
 
 import pandas as pd
 import pytest
-from dsr_files.enums import FileType
-
 from dsr_feature_eng_ml.enums import (
     BalancingStrategy,
     ModelType,
@@ -15,7 +13,8 @@ from dsr_feature_eng_ml.evaluation import ModelAuditSummary
 from dsr_feature_eng_ml.evaluation.audit_pdf_renderer import AuditPDFRenderer
 from dsr_feature_eng_ml.evaluation.schema import DataSplits, ModelConfiguration
 from dsr_feature_eng_ml.models.lasso_regression import LassoParams
-from dsr_feature_eng_ml.models.random_forest import RandomForestParams
+from dsr_feature_eng_ml.models.random_forest import RandomForestRegressorParams
+from dsr_files.enums import FileType
 
 
 @pytest.fixture
@@ -33,8 +32,8 @@ def populated_summary(mini_taxi_df):
         scoring=ScoringMetric.R2,
         n_jobs=1,
         n_iter=10,
-        model_params=RandomForestParams.create_default(
-            task_type=TaskType.REGRESSION, scoring=ScoringMetric.R2, random_state=75
+        model_params=RandomForestRegressorParams(
+            scoring=ScoringMetric.R2, random_state=75
         ),
     )
     # 2. Create a Losing Model (Lasso)

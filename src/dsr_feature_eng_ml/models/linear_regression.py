@@ -16,14 +16,14 @@ from dsr_feature_eng_ml.enums import (
     TaskType,
 )
 from dsr_feature_eng_ml.models.model_specification import (
-    ModelParams,
+    RegressionModelParams,
     RegressionModelSpecification,
 )
 from dsr_feature_eng_ml.prefs_instance import prefs
 
 
 @dataclass(frozen=True)
-class LinearRegressionParams(ModelParams):
+class LinearRegressionParams(RegressionModelParams):
     """Hyperparameters for linear regression models."""
 
     fit_intercept: bool = True
@@ -31,8 +31,6 @@ class LinearRegressionParams(ModelParams):
     n_jobs: Optional[int] = None
     positive: bool = False
     random_state: Optional[int] = None
-    task_type: TaskType = TaskType.REGRESSION
-    scoring: ScoringMetric = ScoringMetric.R2
 
     def info(self) -> str:
         data = [
@@ -63,10 +61,6 @@ class LinearRegression(
     params_class = LinearRegressionParams
 
     @property
-    def task_type(self) -> TaskType:
-        return self._task_type
-
-    @property
     def scoring(self) -> ScoringMetric:
         return self._scoring
 
@@ -76,7 +70,7 @@ class LinearRegression(
 
     @property
     def model_type(self) -> ModelType:
-        return self._model_type
+        return ModelType.LINEAR_REGRESSION
 
     @property
     def model_dials(self) -> LinearRegressionParams:
@@ -107,7 +101,6 @@ class LinearRegression(
             )
 
         self._model_dials = params
-        self._task_type = TaskType.REGRESSION
         self._scoring = self.model_dials.scoring
 
         super().__init__(
@@ -119,7 +112,6 @@ class LinearRegression(
             large_gap=large_gap,
         )
 
-        self._model_type = ModelType.LINEAR_REGRESSION
         self.optimization_strategy = optimization_strategy
         self.estimator = self.create_estimator()
 

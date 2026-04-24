@@ -3,7 +3,6 @@ from typing import Any, Optional, Type, Union
 
 import numpy as np
 import pytest
-
 from dsr_feature_eng_ml.enums import (
     ModelType,
     OptimizationStrategy,
@@ -150,9 +149,9 @@ def test_feature_importance_extraction_logic():
     importances = spec.feature_importances
 
     # 1. Explicitly assert not None to satisfy type checker
-    assert (
-        importances is not None
-    ), "Feature importances should not be None for fitted linear model"
+    assert importances is not None, (
+        "Feature importances should not be None for fitted linear model"
+    )
 
     # 2. Perform the equality check
     # Coefficients are returned as absolute values

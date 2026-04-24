@@ -1,12 +1,12 @@
 from typing import Type
 
 import pytest
-
 from dsr_feature_eng_ml.enums import ModelType, ScoringMetric, TaskType
 from dsr_feature_eng_ml.models.decision_tree import (
     DecisionTreeClassifierModel,
-    DecisionTreeParams,
+    DecisionTreeClassifierParams,
     DecisionTreeRegressorModel,
+    DecisionTreeRegressorParams,
 )
 from dsr_feature_eng_ml.models.elastic_net_regression import (
     ElasticNetParams,
@@ -24,8 +24,9 @@ from dsr_feature_eng_ml.models.logistic_regression import (
 from dsr_feature_eng_ml.models.model_specification import ModelParams
 from dsr_feature_eng_ml.models.random_forest import (
     RandomForestClassifierModel,
-    RandomForestParams,
+    RandomForestClassifierParams,
     RandomForestRegressorModel,
+    RandomForestRegressorParams,
 )
 from dsr_feature_eng_ml.models.ridge_regression import RidgeParams, RidgeRegression
 from dsr_feature_eng_ml.preferences import prefs
@@ -89,13 +90,9 @@ def test_all_model_integrities(model_class, expected_type, expected_task, scorin
     This prevents 'ghost' classification charts in regression audits.
     """
     if scoring is not None:
-        instance = model_class(
-            cv=None, balancing_strategy=None, scoring=scoring
-        )
+        instance = model_class(cv=None, balancing_strategy=None, scoring=scoring)
     else:
-        instance = model_class(
-            cv=None, balancing_strategy=None
-        )
+        instance = model_class(cv=None, balancing_strategy=None)
 
     # 1. Identity Check
     assert instance.model_type == expected_type
@@ -154,7 +151,7 @@ PARAM_CONTRACTS = [
         ],
     ),
     (
-        RandomForestParams,
+        RandomForestClassifierParams,
         TaskType.CLASSIFICATION,
         ScoringMetric.F1,
         [
@@ -167,7 +164,7 @@ PARAM_CONTRACTS = [
         ],
     ),
     (
-        RandomForestParams,
+        RandomForestRegressorParams,
         TaskType.REGRESSION,
         ScoringMetric.R2,
         [
@@ -180,7 +177,7 @@ PARAM_CONTRACTS = [
         ],
     ),
     (
-        DecisionTreeParams,
+        DecisionTreeClassifierParams,
         TaskType.CLASSIFICATION,
         ScoringMetric.F1,
         [
@@ -198,7 +195,7 @@ PARAM_CONTRACTS = [
         ],
     ),
     (
-        DecisionTreeParams,
+        DecisionTreeRegressorParams,
         TaskType.REGRESSION,
         ScoringMetric.R2,
         [
@@ -256,7 +253,6 @@ def test_model_params_attributes(
 
 def test_audit_risk_profile_detection(mini_taxi_df):
     """Verify that the auditor identifies the high-kurtosis risk profile."""
-    from dsr_feature_eng_ml.evaluation.model_auditor import ModelAuditor
 
     # Mocking the audit summary logic
     kurtosis_val = mini_taxi_df["fare_amount"].kurt()

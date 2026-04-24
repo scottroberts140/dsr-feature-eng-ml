@@ -16,14 +16,14 @@ from dsr_feature_eng_ml.enums import (
     TaskType,
 )
 from dsr_feature_eng_ml.models.model_specification import (
+    ClassificationModelParams,
     ClassificationModelSpecification,
-    ModelParams,
 )
 from dsr_feature_eng_ml.prefs_instance import prefs
 
 
 @dataclass(frozen=True)
-class LogisticRegressionParams(ModelParams):
+class LogisticRegressionParams(ClassificationModelParams):
     """
     Hyperparameters for logistic regression models.
 
@@ -41,8 +41,6 @@ class LogisticRegressionParams(ModelParams):
     class_weight: dict[Any, Any] | str | None = None
     l1_ratio: float | None = None  # Only used if penalty='elasticnet'
     random_state: int | None = None
-    task_type: TaskType = TaskType.CLASSIFICATION
-    scoring: ScoringMetric = ScoringMetric.F1
 
     def info(self) -> str:
         """Return a formatted summary of Logistic Regression parameters."""
@@ -121,7 +119,6 @@ class LogisticRegression(
             )
 
         self._model_dials = params
-        self._task_type = TaskType.CLASSIFICATION
         self._scoring = self.model_dials.scoring
 
         super().__init__(
@@ -134,18 +131,12 @@ class LogisticRegression(
             optimization_strategy=optimization_strategy,
         )
 
-        self._model_type = ModelType.LOGISTIC_REGRESSION
         self.estimator = self.create_estimator()
-
-    @property
-    def task_type(self) -> TaskType:
-        """The classification task type for this model."""
-        return self._task_type
 
     @property
     def model_type(self) -> ModelType:
         """The Logistic Regression model type identifier."""
-        return self._model_type
+        return ModelType.LOGISTIC_REGRESSION
 
     @property
     def scoring(self) -> ScoringMetric:

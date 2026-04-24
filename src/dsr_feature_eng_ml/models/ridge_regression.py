@@ -16,14 +16,14 @@ from dsr_feature_eng_ml.enums import (
     TaskType,
 )
 from dsr_feature_eng_ml.models.model_specification import (
-    ModelParams,
+    RegressionModelParams,
     RegressionModelSpecification,
 )
 from dsr_feature_eng_ml.prefs_instance import prefs
 
 
 @dataclass(frozen=True)
-class RidgeParams(ModelParams):
+class RidgeParams(RegressionModelParams):
     """
     Hyperparameters for ridge regression models.
 
@@ -41,8 +41,6 @@ class RidgeParams(ModelParams):
         "auto", "svd", "cholesky", "lsqr", "sparse_cg", "sag", "saga", "lbfgs"
     ] = "auto"
     random_state: int | None = None
-    task_type: TaskType = TaskType.REGRESSION
-    scoring: ScoringMetric = ScoringMetric.R2
 
     def info(self) -> str:
         """Return a formatted summary of Ridge parameters."""
@@ -109,7 +107,6 @@ class RidgeRegression(RegressionModelSpecification[RidgeParams, SklearnRidge]):
             params = RidgeParams(task_type=task_type, random_state=1, scoring=scoring)
 
         self._model_dials = params
-        self._task_type = TaskType.REGRESSION
         self._scoring = self.model_dials.scoring
 
         super().__init__(
@@ -122,18 +119,12 @@ class RidgeRegression(RegressionModelSpecification[RidgeParams, SklearnRidge]):
             optimization_strategy=optimization_strategy,
         )
 
-        self._model_type = ModelType.RIDGE
         self.estimator = self.create_estimator()
-
-    @property
-    def task_type(self) -> TaskType:
-        """The regression task type for this model."""
-        return self._task_type
 
     @property
     def model_type(self) -> ModelType:
         """The Ridge model type identifier."""
-        return self._model_type
+        return ModelType.RIDGE
 
     @property
     def scoring(self) -> ScoringMetric:

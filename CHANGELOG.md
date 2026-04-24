@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* **Task-Specific ModelParams Bases**: Introduced `ClassificationModelParams` and `RegressionModelParams` as frozen abstract base dataclasses. Single-task params classes (`LogisticRegressionParams`, `LassoParams`, `LinearRegressionParams`, `RidgeParams`, `ElasticNetParams`) now inherit from the appropriate base and no longer redeclare `task_type` or `scoring` fields.
+* **Typed DecisionTree/RandomForest Params Subclasses**: Split `DecisionTreeParams` and `RandomForestParams` into abstract base classes and task-specific concrete subclasses (`DecisionTreeClassifierParams`, `DecisionTreeRegressorParams`, `RandomForestClassifierParams`, `RandomForestRegressorParams`). Each subclass encodes its own `task_type`, `scoring` default, criterion default, and `__post_init__` validation, eliminating the need for runtime `task_type` guards in model `__init__` methods.
+* **`model_type` Property Refactor**: Removed `_model_type` backing instance variables from all nine concrete model classes; `model_type` properties now return enum constants directly.
+* **Redundant `task_type` Property Removal**: Removed `_task_type` instance variables and override properties from the five single-task model classes; `task_type` is now inherited from `ClassificationModelSpecification` or `RegressionModelSpecification`.
 * **Factory Task Routing Simplification**: Removed explicit `task_type` from `ModelSpecification.instantiate_model` and normalized base `DecisionTree` / `RandomForest` classes to task-specific wrappers during config assembly.
 * **Model Inheritance Alignment**: Updated single-task model classes (Logistic, Linear, Lasso, Ridge, Elastic Net) to inherit from task-specialized base specifications.
 * **Legacy Base Class Removal**: Removed `DecisionTree` and `RandomForest` dual-task base classes. `DecisionTreeClassifierModel`, `DecisionTreeRegressorModel`, `RandomForestClassifierModel`, and `RandomForestRegressorModel` now inherit directly from `ClassificationModelSpecification` or `RegressionModelSpecification`.

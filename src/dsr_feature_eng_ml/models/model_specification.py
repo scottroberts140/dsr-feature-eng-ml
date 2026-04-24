@@ -279,6 +279,22 @@ class ModelParams(ABC):
         pass
 
 
+@dataclass(frozen=True)
+class ClassificationModelParams(ModelParams, ABC):
+    """Base hyperparameter class for classification-only models."""
+
+    task_type: TaskType = TaskType.CLASSIFICATION
+    scoring: ScoringMetric = ScoringMetric.F1
+
+
+@dataclass(frozen=True)
+class RegressionModelParams(ModelParams, ABC):
+    """Base hyperparameter class for regression-only models."""
+
+    task_type: TaskType = TaskType.REGRESSION
+    scoring: ScoringMetric = ScoringMetric.R2
+
+
 class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
     """
     Abstract base class defining the lifecycle and configuration of an ML model.

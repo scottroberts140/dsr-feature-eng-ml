@@ -7,16 +7,6 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 import pytest
-from dsr_utils.formatting import (
-    BoolFormat,
-    CurrencyFormat,
-    DateTimeFormat,
-    FloatFormat,
-    IntegerFormat,
-    StringFormat,
-)
-from sklearn.preprocessing import StandardScaler
-
 from dsr_feature_eng_ml.enums import (
     BalancingStrategy,
     ModelGeneralization,
@@ -35,9 +25,18 @@ from dsr_feature_eng_ml.evaluation.schema import (
 )
 from dsr_feature_eng_ml.models.lasso_regression import LassoRegression
 from dsr_feature_eng_ml.models.random_forest import (
-    RandomForestParams,
     RandomForestRegressorModel,
+    RandomForestRegressorParams,
 )
+from dsr_utils.formatting import (
+    BoolFormat,
+    CurrencyFormat,
+    DateTimeFormat,
+    FloatFormat,
+    IntegerFormat,
+    StringFormat,
+)
+from sklearn.preprocessing import StandardScaler
 
 
 def test_dataset_formatters_default_mapping():
@@ -308,8 +307,8 @@ def test_resampling_strategies(mini_taxi_df):
 @pytest.fixture
 def rf_config_from_audit():
     """Build a ModelConfiguration using the specific values from the Taxi Audit JSON."""
-    params = RandomForestParams(
-        n_estimators=50, max_depth=20, min_samples_leaf=5, task_type=TaskType.REGRESSION
+    params = RandomForestRegressorParams(
+        n_estimators=50, max_depth=20, min_samples_leaf=5
     )
 
     return ModelConfiguration(
