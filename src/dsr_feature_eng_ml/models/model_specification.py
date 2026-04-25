@@ -1445,13 +1445,20 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         **kwargs: Any,
     ) -> ModelSpecification:
         """Factory method to instantiate a concrete ModelSpecification."""
-        init_kwargs = {
+        import inspect
+
+        all_kwargs = {
             "balancing_strategy": strategy,
             "params": params,
             "cv": cv,
             "optimization_strategy": optimization_strategy,
             **kwargs,
         }
+        # Filter to only the parameters the target class actually accepts so
+        # that a stored field like max_iter doesn't break tree-based models
+        # whose __init__ signatures don't include it.
+        accepted = set(inspect.signature(model_cls.__init__).parameters)
+        init_kwargs = {k: v for k, v in all_kwargs.items() if k in accepted}
         return model_cls(**init_kwargs)
 
     @classmethod
