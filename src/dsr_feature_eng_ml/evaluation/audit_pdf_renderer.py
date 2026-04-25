@@ -1312,6 +1312,31 @@ class AuditPDFRenderer:
             # Fallback to defaults if headers aren't found in the expected format
             final_handles, final_labels = handles, labels
 
+        # Rebuild model handles with compact markers so legend symbols remain
+        # readable even when plotted scatter markers are intentionally large.
+        compact_handles: list[Any] = []
+        compact_labels: list[str] = []
+        for lbl in final_labels:
+            if lbl == "Model":
+                continue
+            compact_handles.append(
+                Line2D(
+                    [0],
+                    [0],
+                    marker="o",
+                    linestyle="None",
+                    markerfacecolor=self.summary.solid_color_palette.get(
+                        lbl, prefs.color_neutral
+                    ),
+                    markeredgecolor="none",
+                    markersize=6,
+                )
+            )
+            compact_labels.append(lbl)
+
+        final_handles = compact_handles
+        final_labels = compact_labels
+
         # 3. Append Technical Interpretation Note
         # We add invisible handles to position the 'Bubble size' note at the bottom.
         final_handles.append(mpatches.Patch(color="none"))
@@ -1329,7 +1354,8 @@ class AuditPDFRenderer:
             title=None,
             loc="best",
             fontsize=8,
-            handlelength=0,  # Hide icon indicators for the text-only note
+            handlelength=1.0,
+            handletextpad=0.5,
             frameon=True,
             ncol=2,
             columnspacing=0.8,
