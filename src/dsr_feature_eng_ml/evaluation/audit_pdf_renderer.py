@@ -1259,16 +1259,34 @@ class AuditPDFRenderer:
         view of model performance and precision.
         """
         # 1. Generate the Scatter Plot
-        sns.scatterplot(
-            x="Train Time (s)",
-            y="Val Score",
-            hue="Model",
-            size="MAE",
-            sizes=(100, 500),  # Sizes chosen for visual distinctness
-            data=self.summary_df,
-            palette=self.summary.solid_color_palette,
-            ax=ax,
-        )
+        # Classification runs often have no MAE; if size maps to all-NaN MAE values,
+        # seaborn drops all rows and the chart appears blank.
+        plot_df = self.summary_df.copy()
+        mae_values = pd.to_numeric(plot_df["MAE"], errors="coerce")
+        has_valid_mae = mae_values.notna().any()
+
+        if has_valid_mae:
+            plot_df["_mae_size"] = mae_values
+            sns.scatterplot(
+                x="Train Time (s)",
+                y="Val Score",
+                hue="Model",
+                size="_mae_size",
+                sizes=(100, 500),  # Sizes chosen for visual distinctness
+                data=plot_df,
+                palette=self.summary.solid_color_palette,
+                ax=ax,
+            )
+        else:
+            sns.scatterplot(
+                x="Train Time (s)",
+                y="Val Score",
+                hue="Model",
+                s=220,
+                data=plot_df,
+                palette=self.summary.solid_color_palette,
+                ax=ax,
+            )
 
         ax.set_xscale("linear")
         ax.set_title("Efficiency: Accuracy vs. Time")
@@ -1281,8 +1299,8 @@ class AuditPDFRenderer:
         handles, labels = ax.get_legend_handles_labels()
 
         try:
-            # Locate the 'MAE' header to separate models from bubble samples
-            stop_idx = labels.index("MAE")
+            # Locate the size-header entry to separate model labels from samples.
+            stop_idx = labels.index("_mae_size")
             final_handles = handles[:stop_idx]
             final_labels = labels[:stop_idx]
 
@@ -1299,10 +1317,11 @@ class AuditPDFRenderer:
         final_handles.append(mpatches.Patch(color="none"))
         final_labels.append("")
 
-        final_handles.append(
-            mpatches.Patch(color="none", label="Note: Bubble size = MAE")
-        )
-        final_labels.append("Note: Bubble size = MAE\n(Smaller is better)")
+        final_handles.append(mpatches.Patch(color="none"))
+        if has_valid_mae:
+            final_labels.append("Note: Bubble size = MAE\n(Smaller is better)")
+        else:
+            final_labels.append("Note: Uniform marker size\n(MAE unavailable)")
 
         leg = ax.legend(
             handles=final_handles,

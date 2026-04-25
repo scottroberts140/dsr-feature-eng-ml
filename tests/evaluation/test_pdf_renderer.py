@@ -3,6 +3,7 @@ import dataclasses
 import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
+import seaborn as sns
 from dsr_feature_eng_ml.enums import (
     BalancingStrategy,
     ModelType,
@@ -177,6 +178,28 @@ def test_plot_regression_residuals_constant_predictions(populated_summary):
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", UserWarning)
-            renderer._plot_regression_residuals(ax, y_true, y_preds, model_name=model_name)
+            renderer._plot_regression_residuals(
+                ax, y_true, y_preds, model_name=model_name
+            )
     finally:
         plt.close(fig)
+
+
+def test_plot_efficiency_scatter_handles_missing_mae(populated_summary):
+    """Ensure the efficiency scatter still renders when MAE is unavailable."""
+    renderer = AuditPDFRenderer(summary=populated_summary)
+    renderer.summary_df["MAE"] = pd.NA
+
+    fig, ax = plt.subplots()
+    try:
+        renderer._plot_efficiency_scatter(sns, ax)
+        point_count = sum(
+            len(collection.get_offsets())
+            for collection in ax.collections
+            if hasattr(collection, "get_offsets")
+        )
+    finally:
+        plt.close(fig)
+
+    assert point_count > 0
+    assert ax.get_title() == "Efficiency: Accuracy vs. Time"
