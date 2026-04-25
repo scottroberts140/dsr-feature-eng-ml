@@ -9,6 +9,7 @@ import psutil
 from dsr_utils.formatting import (
     BoolFormat,
     BoolRepresentation,
+    DataFormat,
     DataScale,
     IntegerFormat,
     ValueDescFormat,
@@ -106,9 +107,13 @@ def check_memory_risk(
     )
     int_format = IntegerFormat()
 
+    dataset_fmt = DataFormat(
+        data_scale=DataScale.AUTO, precision=2, include_space_before_scale=True
+    )
+
     stats = [
         ("Available", prefs.gb_format.format_value(available_gb)),
-        ("Dataset", prefs.gb_format.format_value(dataset_gb)),
+        ("Dataset", dataset_fmt.format_value(dataset_gb)),  # AUTO picks MB/GB
         ("Model Multiplier", model_multiplier_format.format_value(model_multiplier)),
         ("n_jobs", int_format.format_value(n_jobs)),
         ("Concurrent Workers", int_format.format_value(concurrent_workers)),

@@ -571,8 +571,14 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             return s_feat, s_targ, factor
 
         # 2. Heuristic Sampling (Speed)
+        # Only sample when the dataset actually exceeds the safety limit.
+        # Datasets already within the limit use all available rows so that
+        # small datasets (e.g. 26k rows) are not penalised by the 10% floor.
         if max_sample_size is None:
-            max_sample_size = min(prefs.min_target_tuning_rows, int(total_rows * 0.10))
+            if total_rows <= prefs.min_target_tuning_rows:
+                max_sample_size = total_rows  # Small enough – use everything
+            else:
+                max_sample_size = prefs.min_target_tuning_rows
 
         if total_rows > max_sample_size:
             print(f"⚠️ Dataset ({total_rows:,} rows) exceeds tuning safety limit.")
