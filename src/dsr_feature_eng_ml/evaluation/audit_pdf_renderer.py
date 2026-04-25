@@ -1314,10 +1314,13 @@ class AuditPDFRenderer:
 
         # Rebuild model handles with compact markers so legend symbols remain
         # readable even when plotted scatter markers are intentionally large.
+        # Gate on known model names so seaborn size-legend entries (numeric MAE
+        # values, "_mae_size" header, "Model" header) are never included.
+        model_names = set(self.summary.solid_color_palette.keys())
         compact_handles: list[Any] = []
         compact_labels: list[str] = []
         for lbl in final_labels:
-            if lbl == "Model":
+            if lbl not in model_names:
                 continue
             compact_handles.append(
                 Line2D(
