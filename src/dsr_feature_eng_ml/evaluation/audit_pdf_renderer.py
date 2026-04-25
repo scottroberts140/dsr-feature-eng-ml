@@ -1265,6 +1265,31 @@ class AuditPDFRenderer:
         mae_values = pd.to_numeric(plot_df["MAE"], errors="coerce")
         has_valid_mae = mae_values.notna().any()
 
+        # Jitter points that overlap exactly (same Val Score AND same Train Time
+        # within tolerance) so both dots remain visible in the static chart.
+        # The offset is ±1 % of the visible y-range — negligible on the scale of
+        # the chart but enough to prevent complete occlusion.
+        x_col = "Train Time (s)"
+        y_col = "Val Score"
+        x_tol = (plot_df[x_col].max() - plot_df[x_col].min()) * 0.01
+        y_tol = (plot_df[y_col].max() - plot_df[y_col].min()) * 0.01
+        y_step = max(y_tol, 0.003)  # minimum absolute step
+        has_overlap = False
+        seen: list[tuple[float, float]] = []
+        jittered_y = plot_df[y_col].tolist()
+        jittered_x = plot_df[x_col].tolist()
+        for i, (xi, yi) in enumerate(zip(jittered_x, jittered_y)):
+            slot = 0
+            for sx, sy in seen:
+                if abs(xi - sx) <= x_tol and abs(yi - sy) <= y_tol:
+                    slot += 1
+            if slot > 0:
+                has_overlap = True
+                jittered_y[i] = yi + slot * y_step
+            seen.append((xi, yi))
+        plot_df = plot_df.copy()
+        plot_df[y_col] = jittered_y
+
         if has_valid_mae:
             plot_df["_mae_size"] = mae_values
             sns.scatterplot(
@@ -1341,7 +1366,7 @@ class AuditPDFRenderer:
         final_labels = compact_labels
 
         # 3. Append Technical Interpretation Note
-        # We add invisible handles to position the 'Bubble size' note at the bottom.
+        # We add invisible handles to position the notes at the bottom.
         final_handles.append(mpatches.Patch(color="none"))
         final_labels.append("")
 
@@ -1350,6 +1375,12 @@ class AuditPDFRenderer:
             final_labels.append("Note: Bubble size = MAE\n(Smaller is better)")
         else:
             final_labels.append("Note: Uniform marker size\n(MAE unavailable)")
+
+        if has_overlap:
+            final_handles.append(mpatches.Patch(color="none"))
+            final_labels.append("")
+            final_handles.append(mpatches.Patch(color="none"))
+            final_labels.append("⚠ Overlapping points offset\nfor visibility")
 
         leg = ax.legend(
             handles=final_handles,
