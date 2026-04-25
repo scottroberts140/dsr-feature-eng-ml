@@ -521,8 +521,8 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         use_combined_data : bool, default False
             If True, combines training and validation sets for the tuning phase.
         max_sample_size : int, optional
-            The maximum number of rows to use for tuning. Defaults to 10% of data
-            or 100,000 rows (whichever is smaller).
+            The maximum number of rows to use for tuning. If None, all available
+            rows are used.
         perform_memory_check : bool, default True
             If True, validates memory headroom before starting the search.
 
@@ -570,15 +570,10 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             factor = size / total_rows
             return s_feat, s_targ, factor
 
-        # 2. Heuristic Sampling (Speed)
-        # Only sample when the dataset actually exceeds the safety limit.
-        # Datasets already within the limit use all available rows so that
-        # small datasets (e.g. 26k rows) are not penalised by the 10% floor.
+        # 2. Optional Sampling (Speed)
+        # Respect explicit caller cap. If no cap is provided, tune on all rows.
         if max_sample_size is None:
-            if total_rows <= prefs.min_target_tuning_rows:
-                max_sample_size = total_rows  # Small enough – use everything
-            else:
-                max_sample_size = prefs.min_target_tuning_rows
+            max_sample_size = total_rows
 
         if total_rows > max_sample_size:
             print(f"⚠️ Dataset ({total_rows:,} rows) exceeds tuning safety limit.")
