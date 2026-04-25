@@ -300,7 +300,7 @@ class ModelAuditSummary:
         """
         from dsr_files.joblib_handler import load_joblib
 
-        loaded_data = load_joblib(filepath=filepath)
+        loaded_data, _ = load_joblib(filepath=filepath)
 
         if not isinstance(loaded_data, cls):
             raise TypeError(
