@@ -1271,9 +1271,14 @@ class AuditPDFRenderer:
         # the chart but enough to prevent complete occlusion.
         x_col = "Train Time (s)"
         y_col = "Val Score"
+        y_range = plot_df[y_col].max() - plot_df[y_col].min()
         x_tol = (plot_df[x_col].max() - plot_df[x_col].min()) * 0.01
-        y_tol = (plot_df[y_col].max() - plot_df[y_col].min()) * 0.01
-        y_step = max(y_tol, 0.003)  # minimum absolute step
+        y_tol = y_range * 0.01
+        # Step must be large enough to visually clear the bubble radii.
+        # Bubble sizes=(100,500) means a max radius of ~12 pts; 4% of the
+        # y-range is typically large enough to separate dots at standard
+        # figure sizes without distorting the chart scale.
+        y_step = max(y_range * 0.04, 0.015)
         has_overlap = False
         seen: list[tuple[float, float]] = []
         jittered_y = plot_df[y_col].tolist()
