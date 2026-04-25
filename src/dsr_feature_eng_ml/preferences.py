@@ -473,7 +473,6 @@ class Preferences:
                 "legend.fontsize": 9,
                 "legend.title_fontsize": 10,
                 "legend.frameon": True,
-                "legend.edgecolor": self.color_neutral,
                 "legend.framealpha": 0.9,  # Slightly transparent Paper White
                 "legend.edgecolor": self.color_neutral,  # Audit Blue border
                 "legend.fancybox": True,  # Rounded corners
