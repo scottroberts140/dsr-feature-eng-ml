@@ -841,7 +841,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         targets: pd.Series[Any],
         filter_outliers: bool,
         outlier_count: int,
-    ) -> Tuple[float, Optional[float], pd.Series, pd.DataFrame]:
+    ) -> Tuple[float, Optional[float], pd.Series, Optional[pd.DataFrame]]:
         """
         Compute weighted F1 scores and extract class probabilities.
 
@@ -868,23 +868,25 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             The weighted F1 score after removing outliers. None if filter_outliers is False.
         preds : pd.Series
             Discrete class predictions indexed to the input features.
-        probs : pd.DataFrame
-            Class probabilities indexed to the input features.
+        probs : pd.DataFrame, optional
+            Class probabilities indexed to the input features when the model
+            supports ``predict_proba``; otherwise None.
         """
-        # 1. Safety Guard: Ensure estimator is fitted and supports probabilities
-        # This solves the Pylance "estimator is None" and "predict_proba missing" errors
+        # 1. Safety Guard: Ensure estimator is fitted
         estimator = self._get_fitted_estimator()
 
-        # We cast to ProbabilisticClassifier to ensure Pylance recognizes predict_proba
-        prob_estimator = cast(ProbabilisticClassifier, estimator)
-
         # 2. Generate raw outputs
-        raw_preds = prob_estimator.predict(features)
-        raw_probs = prob_estimator.predict_proba(features)
+        raw_preds = estimator.predict(features)
+        raw_probs: Optional[np.ndarray] = None
+        probs: Optional[pd.DataFrame] = None
+        if self.is_probabilistic(estimator):
+            # Cast once protocol compliance is verified
+            prob_estimator = cast(ProbabilisticClassifier, estimator)
+            raw_probs = prob_estimator.predict_proba(features)
+            probs = pd.DataFrame(raw_probs, index=targets.index)
 
         # 3. Align with original indices
         preds = pd.Series(raw_preds, index=targets.index, name="predictions")
-        probs = pd.DataFrame(raw_probs, index=targets.index)
 
         # 4. Standard Metric Calculation
         from sklearn.metrics import f1_score
@@ -894,7 +896,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         # 5. Outlier Filtering (Confident Mistakes)
         f1_cleaned: Optional[float] = None
 
-        if filter_outliers:
+        if filter_outliers and raw_probs is not None:
             # Mask where prediction is wrong
             incorrect_mask = targets.to_numpy() != raw_preds
 
