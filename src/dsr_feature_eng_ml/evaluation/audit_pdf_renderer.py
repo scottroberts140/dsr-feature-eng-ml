@@ -1295,27 +1295,35 @@ class AuditPDFRenderer:
         plot_df = plot_df.copy()
         plot_df[y_col] = jittered_y
 
+        s_min, s_max = 100.0, 500.0
         if has_valid_mae:
             plot_df["_mae_size"] = mae_values
-            sns.scatterplot(
-                x="Train Time (s)",
-                y="Val Score",
-                hue="Model",
-                size="_mae_size",
-                sizes=(100, 500),  # Sizes chosen for visual distinctness
-                data=plot_df,
-                palette=self.summary.solid_color_palette,
-                ax=ax,
-            )
+            valid_mae = plot_df["_mae_size"].dropna()
+            if not valid_mae.empty and valid_mae.max() > valid_mae.min():
+                plot_df["_bubble_size"] = s_min + (
+                    (plot_df["_mae_size"] - valid_mae.min())
+                    / (valid_mae.max() - valid_mae.min())
+                ) * (s_max - s_min)
+                plot_df["_bubble_size"] = plot_df["_bubble_size"].fillna(s_min)
+            else:
+                plot_df["_bubble_size"] = (s_min + s_max) / 2
         else:
-            sns.scatterplot(
-                x="Train Time (s)",
-                y="Val Score",
-                hue="Model",
-                s=220,
-                data=plot_df,
-                palette=self.summary.solid_color_palette,
-                ax=ax,
+            plot_df["_bubble_size"] = 220.0
+
+        # Draw larger bubbles first so smaller overlapping models remain visible.
+        # This avoids seaborn hue-order occlusion where one marker can completely
+        # hide another even after jitter.
+        draw_df = plot_df.sort_values("_bubble_size", ascending=False)
+        for _, row in draw_df.iterrows():
+            ax.scatter(
+                row[x_col],
+                row[y_col],
+                s=float(row["_bubble_size"]),
+                c=self.summary.solid_color_palette.get(row["Model"], prefs.color_neutral),
+                alpha=0.92,
+                edgecolors="white",
+                linewidths=0.8,
+                zorder=3,
             )
 
         ax.set_xscale("linear")
@@ -1326,32 +1334,14 @@ class AuditPDFRenderer:
         # 2. Professional Legend Refinement
         # Seaborn default legends often include internal headers like 'Model' or 'MAE'.
         # We strip these to ensure the report remains clean and executive-ready.
-        handles, labels = ax.get_legend_handles_labels()
-
-        try:
-            # Locate the size-header entry to separate model labels from samples.
-            stop_idx = labels.index("_mae_size")
-            final_handles = handles[:stop_idx]
-            final_labels = labels[:stop_idx]
-
-            # Remove 'Model' header if present at the start
-            if final_labels and final_labels[0] == "Model":
-                final_handles = final_handles[1:]
-                final_labels = final_labels[1:]
-        except (ValueError, IndexError):
-            # Fallback to defaults if headers aren't found in the expected format
-            final_handles, final_labels = handles, labels
-
-        # Rebuild model handles with compact markers so legend symbols remain
-        # readable even when plotted scatter markers are intentionally large.
-        # Gate on known model names so seaborn size-legend entries (numeric MAE
-        # values, "_mae_size" header, "Model" header) are never included.
+        # Build legend directly from rendered models to avoid seaborn-generated
+        # size/header artifacts and keep ordering aligned to the summary table.
         model_names = set(self.summary.solid_color_palette.keys())
+        plotted_models = [m for m in plot_df["Model"].tolist() if m in model_names]
+        ordered_models = list(dict.fromkeys(plotted_models))
         compact_handles: list[Any] = []
         compact_labels: list[str] = []
-        for lbl in final_labels:
-            if lbl not in model_names:
-                continue
+        for lbl in ordered_models:
             compact_handles.append(
                 Line2D(
                     [0],
