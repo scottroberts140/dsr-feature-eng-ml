@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, Type
 
 from dsr_utils import format_label_value_pairs
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier as SklearnXGBClassifier
 
@@ -23,7 +24,7 @@ from dsr_feature_eng_ml.models.model_specification import (
 from dsr_feature_eng_ml.prefs_instance import prefs
 
 
-class EncodedXGBClassifier:
+class EncodedXGBClassifier(BaseEstimator, ClassifierMixin):
     """XGBClassifier adapter that supports non-numeric class labels.
 
     XGBoost's sklearn API expects class labels to be integer-encoded
