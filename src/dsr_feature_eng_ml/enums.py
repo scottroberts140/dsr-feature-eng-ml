@@ -248,14 +248,20 @@ class ModelType(Enum):
         from dsr_feature_eng_ml.models.elastic_net_regression import (
             ElasticNetRegression,
         )
+        from dsr_feature_eng_ml.models.k_neighbors_classifier import (
+            KNeighborsClassifierModel,
+        )
         from dsr_feature_eng_ml.models.lasso_regression import LassoRegression
         from dsr_feature_eng_ml.models.linear_regression import LinearRegression
+        from dsr_feature_eng_ml.models.linear_svc import LinearSVCModel
         from dsr_feature_eng_ml.models.logistic_regression import LogisticRegression
         from dsr_feature_eng_ml.models.random_forest import (
             RandomForestClassifierModel,
             RandomForestRegressorModel,
         )
+        from dsr_feature_eng_ml.models.ridge_classifier import RidgeClassifierModel
         from dsr_feature_eng_ml.models.ridge_regression import RidgeRegression
+        from dsr_feature_eng_ml.models.xgboost_classifier import XGBClassifierModel
 
         match self:
             case ModelType.LINEAR_REGRESSION:
@@ -276,6 +282,14 @@ class ModelType(Enum):
                 return RandomForestClassifierModel
             case ModelType.DECISION_TREE_CLASSIFIER:
                 return DecisionTreeClassifierModel
+            case ModelType.XGB_CLASSIFIER:
+                return XGBClassifierModel
+            case ModelType.RIDGE_CLASSIFIER:
+                return RidgeClassifierModel
+            case ModelType.LINEAR_SVC:
+                return LinearSVCModel
+            case ModelType.K_NEIGHBORS_CLASSIFIER:
+                return KNeighborsClassifierModel
 
         return None
 
