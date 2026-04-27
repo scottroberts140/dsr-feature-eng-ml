@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+import inspect
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -755,8 +756,14 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         process = psutil.Process(os.getpid())
         mem_before = process.memory_info().rss
 
-        # Execute fit - Pylance is happy here because we just assigned self.estimator
-        self.estimator.fit(X, y, sample_weight=weights)
+        # Execute fit. Not all sklearn estimators support sample_weight
+        # (e.g., KNeighborsClassifier), so pass it only when accepted.
+        fit_sig = inspect.signature(self.estimator.fit)
+        accepts_sample_weight = "sample_weight" in fit_sig.parameters
+        if accepts_sample_weight and weights is not None:
+            self.estimator.fit(X, y, sample_weight=weights)
+        else:
+            self.estimator.fit(X, y)
 
         # Memory telemetry
         mem_after = process.memory_info().rss
