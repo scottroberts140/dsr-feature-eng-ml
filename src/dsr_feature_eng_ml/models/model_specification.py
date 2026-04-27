@@ -1065,6 +1065,20 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             outlier_count=outlier_count,
         )
 
+        # When the model was trained on combined train+val data, val_features was
+        # absorbed into the training set.  Scoring on it reports in-sample
+        # performance, not generalisation.  Substitute the held-out CV score so
+        # the leaderboard reflects true out-of-fold performance.
+        if use_combined_data and score_cv is not None:
+            metrics["score_val"] = score_cv
+            metrics["score_val_cleaned"] = None
+            if self.task_type == TaskType.CLASSIFICATION:
+                metrics["accuracy_val"] = score_cv
+                metrics["accuracy_val_cleaned"] = None
+            else:
+                metrics["r2_val"] = score_cv
+                metrics["r2_val_cleaned"] = None
+
         # 3. Feature Importance and Initialization
         importance_analysis = self.analyze_feature_importance(features_to_fit_set)
 
