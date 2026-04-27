@@ -258,7 +258,7 @@ class ModelAuditor:
                         id=global_id,
                         features_to_fit_set=self.features_to_fit_set,
                         score_cv=best_cv,
-                        use_combined_data=optimize,  # Logic matches tune phase
+                        use_combined_data=False,
                         filter_outliers=filter_outliers,
                         outlier_count=outlier_count,
                     )
