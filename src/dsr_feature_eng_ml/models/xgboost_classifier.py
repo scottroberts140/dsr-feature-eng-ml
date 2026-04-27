@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Type
+from typing import Any, Optional, Type
 
 from dsr_utils import format_label_value_pairs
+from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier as SklearnXGBClassifier
 
 from dsr_feature_eng_ml.enums import (
@@ -20,6 +21,68 @@ from dsr_feature_eng_ml.models.model_specification import (
     ClassificationModelSpecification,
 )
 from dsr_feature_eng_ml.prefs_instance import prefs
+
+
+class EncodedXGBClassifier:
+    """XGBClassifier adapter that supports non-numeric class labels.
+
+    XGBoost's sklearn API expects class labels to be integer-encoded
+    (0..K-1). This adapter encodes labels at fit-time and decodes predictions
+    back to the original label space so the rest of the audit pipeline can
+    continue to use native labels (e.g., "<=50K", ">50K").
+    """
+
+    def __init__(self, **xgb_params: Any):
+        self.xgb_params = dict(xgb_params)
+        self._model: SklearnXGBClassifier | None = None
+        self._label_encoder: LabelEncoder | None = None
+        self.classes_: Any = None
+
+    def _get_fitted_model(self) -> SklearnXGBClassifier:
+        if self._model is None:
+            raise RuntimeError("Estimator has not been fitted yet.")
+        return self._model
+
+    @property
+    def feature_importances_(self) -> Any:
+        """Expose feature importances from the fitted XGBoost model."""
+        return self._get_fitted_model().feature_importances_
+
+    def fit(self, X: Any, y: Any, sample_weight: Any = None) -> EncodedXGBClassifier:
+        """Fit XGBoost after label-encoding target classes."""
+        self._label_encoder = LabelEncoder()
+        y_encoded = self._label_encoder.fit_transform(y)
+        self.classes_ = self._label_encoder.classes_
+
+        self._model = SklearnXGBClassifier(**self.xgb_params)
+        if sample_weight is None:
+            self._model.fit(X, y_encoded)
+        else:
+            self._model.fit(X, y_encoded, sample_weight=sample_weight)
+        return self
+
+    def predict(self, X: Any) -> Any:
+        """Predict class labels in the original label space."""
+        model = self._get_fitted_model()
+        enc = model.predict(X)
+        if self._label_encoder is None:
+            return enc
+        return self._label_encoder.inverse_transform(enc.astype(int))
+
+    def predict_proba(self, X: Any) -> Any:
+        """Predict class probabilities."""
+        return self._get_fitted_model().predict_proba(X)
+
+    def get_params(self, deep: bool = True) -> dict[str, Any]:
+        """Return estimator parameters for sklearn clone/grid search."""
+        return dict(self.xgb_params)
+
+    def set_params(self, **params: Any) -> EncodedXGBClassifier:
+        """Set estimator parameters for sklearn clone/grid search."""
+        self.xgb_params.update(params)
+        if self._model is not None:
+            self._model.set_params(**params)
+        return self
 
 
 @dataclass(frozen=True)
@@ -37,7 +100,7 @@ class XGBClassifierParams(ClassificationModelParams):
     learning_rate: float | list[float] = 0.3
     subsample: float | list[float] = 1.0
     colsample_bytree: float | list[float] = 1.0
-    reg_alpha: float | list[float] = 0.0   # L1
+    reg_alpha: float | list[float] = 0.0  # L1
     reg_lambda: float | list[float] = 1.0  # L2
     scale_pos_weight: float = 1.0
     use_label_encoder: bool = False
@@ -93,7 +156,7 @@ class XGBClassifierParams(ClassificationModelParams):
 
 
 class XGBClassifierModel(
-    ClassificationModelSpecification[XGBClassifierParams, SklearnXGBClassifier]
+    ClassificationModelSpecification[XGBClassifierParams, EncodedXGBClassifier]
 ):
     """
     XGBoost classifier model specification.
@@ -163,13 +226,13 @@ class XGBClassifierModel(
     def model_dials(self, value: XGBClassifierParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[SklearnXGBClassifier]:
-        """Return the XGBoost XGBClassifier class."""
-        return SklearnXGBClassifier
+    def get_estimator_class(self) -> Type[EncodedXGBClassifier]:
+        """Return the XGBoost adapter class with label encoding support."""
+        return EncodedXGBClassifier
 
     def create_estimator(
         self, parameters: Optional[XGBClassifierParams] = None
-    ) -> SklearnXGBClassifier:
+    ) -> EncodedXGBClassifier:
         """
         Instantiate a raw XGBClassifier estimator.
 
@@ -180,15 +243,23 @@ class XGBClassifierModel(
         """
         p = parameters or self.model_dials
 
-        n_estimators = p.n_estimators[0] if isinstance(p.n_estimators, list) else p.n_estimators
+        n_estimators = (
+            p.n_estimators[0] if isinstance(p.n_estimators, list) else p.n_estimators
+        )
         max_depth = p.max_depth[0] if isinstance(p.max_depth, list) else p.max_depth
-        learning_rate = p.learning_rate[0] if isinstance(p.learning_rate, list) else p.learning_rate
+        learning_rate = (
+            p.learning_rate[0] if isinstance(p.learning_rate, list) else p.learning_rate
+        )
         subsample = p.subsample[0] if isinstance(p.subsample, list) else p.subsample
-        colsample_bytree = p.colsample_bytree[0] if isinstance(p.colsample_bytree, list) else p.colsample_bytree
+        colsample_bytree = (
+            p.colsample_bytree[0]
+            if isinstance(p.colsample_bytree, list)
+            else p.colsample_bytree
+        )
         reg_alpha = p.reg_alpha[0] if isinstance(p.reg_alpha, list) else p.reg_alpha
         reg_lambda = p.reg_lambda[0] if isinstance(p.reg_lambda, list) else p.reg_lambda
 
-        return SklearnXGBClassifier(
+        return EncodedXGBClassifier(
             n_estimators=n_estimators,
             max_depth=max_depth,
             learning_rate=learning_rate,
