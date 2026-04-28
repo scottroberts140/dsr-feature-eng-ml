@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **Model Inheritance Alignment**: Updated single-task model classes (Logistic, Linear, Lasso, Ridge, Elastic Net) to inherit from task-specialized base specifications.
 * **Legacy Base Class Removal**: Removed `DecisionTree` and `RandomForest` dual-task base classes. `DecisionTreeClassifierModel`, `DecisionTreeRegressorModel`, `RandomForestClassifierModel`, and `RandomForestRegressorModel` now inherit directly from `ClassificationModelSpecification` or `RegressionModelSpecification`.
 * **Memory Telemetry Units**: Standardized fit-time memory telemetry to GB values in both implementation and docstrings.
+* **Audit Timestamp Precision**: Extended auto-generated `audit_timestamp` format from minute precision to second precision (`%Y%m%d_%H%M%S`) to prevent run/export collisions during rapid consecutive experiments.
 
 ### Fixed
 
@@ -32,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **PDF Categorical Target Distribution Rendering**: Updated `AuditPDFRenderer` target-distribution plotting to handle string/categorical targets with class-count bars instead of numeric percentile/KDE logic, preventing PDF export failures in classification audits.
 * **Empty Inverse Transform Guard**: `DataSplits.inverse_transform_df` now short-circuits on empty DataFrames to prevent scaler shape errors.
 * **Feature Metadata Initialization**: `ModelAuditorConfig.from_dataset` now auto-builds `FeatureMetadata` when not explicitly supplied, preventing empty fit-feature configurations.
+* **Snapshot Score Stability**: Updated `ModelAuditSummary` state rehydration to preserve persisted validation/test scalar scores while backfilling missing prediction arrays.
+* **Detailed Audit Stats RAM Display**: Corrected "Actual Peak RAM" formatting in the PDF detailed stats table to avoid double-scaling values already stored in GB.
+* **Deep-Dive PDF Layout Consistency**: Stabilized deep-dive quadrant geometry and title placement across model types, including centered confusion matrix rendering, consistent right-margin bounds, and improved spacing for upper/lower quadrant titles and content.
+* **Classification Misses Rendering**: Implemented robust lower-right "Top Validation Misses" table rendering for classification deep dives (including probability-availability fallbacks).
+* **Regression Deep-Dive Balance**: Reduced lower-left residual chart height and aligned its vertical footprint with the lower-right misses table region for consistent page balance.
 
 ## [1.2.3] - 2026-04-11
 

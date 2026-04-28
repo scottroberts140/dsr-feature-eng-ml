@@ -21,6 +21,10 @@ This suite provides a high-fidelity framework for training, evaluating, and audi
 * Updated fit-time memory telemetry to GB units and aligned related docstrings.
 * Added automatic one-hot encoding trace logging in `DataSplits.from_data_source` (including encoded source columns).
 * Improved classification scoring robustness for string labels by using weighted CV scorers where required.
+* Increased audit timestamp precision to seconds (`%Y%m%d_%H%M%S`) to avoid output/snapshot collisions when running multiple experiments within the same minute.
+* Improved deep-dive PDF layout stability and consistency across classification/regression pages, including centered confusion matrices, consistent quadrant bounds, and refined title/content spacing.
+* Added/strengthened classification deep-dive fallback rendering when probability/importance data is unavailable.
+* Corrected Detailed Audit Stats "Actual Peak RAM" formatting so values already stored in GB render accurately.
 
 ## Core Capabilities
 
