@@ -34,7 +34,9 @@ class KNeighborsClassifierParams(ClassificationModelParams):
     """
 
     n_neighbors: int | list[int] = 5
-    weights: Literal["uniform", "distance"] | list[Literal["uniform", "distance"]] = "uniform"
+    weights: Literal["uniform", "distance"] | list[Literal["uniform", "distance"]] = (
+        "uniform"
+    )
     algorithm: Literal["auto", "ball_tree", "kd_tree", "brute"] = "auto"
     leaf_size: int = 30
     p: int = 2  # 1 = Manhattan, 2 = Euclidean
@@ -171,7 +173,9 @@ class KNeighborsClassifierModel(
         """
         p = parameters or self.model_dials
 
-        n_neighbors = p.n_neighbors[0] if isinstance(p.n_neighbors, list) else p.n_neighbors
+        n_neighbors = (
+            p.n_neighbors[0] if isinstance(p.n_neighbors, list) else p.n_neighbors
+        )
         weights = p.weights[0] if isinstance(p.weights, list) else p.weights
 
         return SklearnKNeighborsClassifier(

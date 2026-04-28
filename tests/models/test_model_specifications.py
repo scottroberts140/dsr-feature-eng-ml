@@ -1,7 +1,12 @@
 from typing import Type
 
 import pytest
-from dsr_feature_eng_ml.enums import ModelType, ScoringMetric, TaskType
+from dsr_feature_eng_ml.enums import (
+    BalancingStrategy,
+    ModelType,
+    ScoringMetric,
+    TaskType,
+)
 from dsr_feature_eng_ml.models.decision_tree import (
     DecisionTreeClassifierModel,
     DecisionTreeClassifierParams,
@@ -267,7 +272,9 @@ def test_random_forest_regressor_params_allow_list_values():
         min_samples_leaf=[1, 5],
         min_samples_split=[2, 4],
     )
-    model = RandomForestRegressorModel(cv=None, balancing_strategy=None, params=params)
+    model = RandomForestRegressorModel(
+        cv=None, balancing_strategy=BalancingStrategy.NONE, params=params
+    )
 
     estimator = model.create_estimator()
     est_params = estimator.get_params()
@@ -284,7 +291,9 @@ def test_decision_tree_regressor_params_allow_list_values():
         min_samples_leaf=[1, 3],
         min_samples_split=[2, 6],
     )
-    model = DecisionTreeRegressorModel(cv=None, balancing_strategy=None, params=params)
+    model = DecisionTreeRegressorModel(
+        cv=None, balancing_strategy=BalancingStrategy.NONE, params=params
+    )
 
     estimator = model.create_estimator()
     est_params = estimator.get_params()
@@ -301,7 +310,9 @@ def test_random_forest_classifier_params_allow_list_values():
         min_samples_leaf=[1, 2],
         min_samples_split=[2, 5],
     )
-    model = RandomForestClassifierModel(cv=None, balancing_strategy=None, params=params)
+    model = RandomForestClassifierModel(
+        cv=None, balancing_strategy=BalancingStrategy.NONE, params=params
+    )
 
     estimator = model.create_estimator()
     est_params = estimator.get_params()
@@ -318,7 +329,9 @@ def test_decision_tree_classifier_params_allow_list_values():
         min_samples_leaf=[1, 2],
         min_samples_split=[2, 4],
     )
-    model = DecisionTreeClassifierModel(cv=None, balancing_strategy=None, params=params)
+    model = DecisionTreeClassifierModel(
+        cv=None, balancing_strategy=BalancingStrategy.NONE, params=params
+    )
 
     estimator = model.create_estimator()
     est_params = estimator.get_params()
@@ -366,6 +379,6 @@ def test_recommendation_note_logic():
     val_score = 0.8145
     cv_score = 0.7109
 
-    # Significant improvement note triggers if diff > 0.05 [cite: 520]
+    # Significant improvement note triggers if diff > 0.05
     improvement = val_score - cv_score
     assert improvement > 0.05

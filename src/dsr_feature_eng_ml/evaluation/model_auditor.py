@@ -172,10 +172,23 @@ class ModelAuditor:
             Run hyperparameter tuning before the final fit.
         save_path : str | Path | CloudPath, optional
             Base directory for logs and exports.
+        append_timestamp_to_save_path : bool, default False
+            If True, write artifacts into a timestamped subdirectory under
+            ``save_path`` using the audit summary timestamp.
         max_sample_size : int, optional
             Cap on training rows used during the tuning phase.
         perform_memory_check : bool, default True
             Calculate memory risk/headroom before tuning.
+        filter_outliers : bool, default False
+            If True, compute additional cleaned validation metrics by removing
+            the highest-error observations from the validation set.
+        outlier_count : int, default prefs.default_worst_errors_n
+            Maximum number of high-error validation observations to exclude
+            when ``filter_outliers`` is enabled. A safety cap inside the
+            scoring pipeline prevents removing more than half of the samples.
+        efficiency_threshold : int, default prefs.default_efficiency_threshold
+            Minimum throughput threshold, in rows per second, used when storing
+            evaluation metadata and downstream recommendation signals.
         """
         base_dir = AnyPath(save_path) if save_path else Path.cwd()
 

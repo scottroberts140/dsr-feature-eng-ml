@@ -24,8 +24,6 @@ from dsr_files.pdf_handler import (
 from dsr_utils.formatting import (
     BoolFormat,
     BoolRepresentation,
-    DataFormat,
-    DataScale,
     DateTimeFormat,
     EnumFormat,
     FloatFormat,
@@ -91,17 +89,33 @@ class AuditPDFRenderer:
             """Precompute key model indicators used by the report."""
             self.model = model
 
-            # Metadata-driven quality assessment
-            self.model_quality = prefs.get_model_quality(model.quality_score)
-            quality_fmt = ValueDescFormat(
-                precision=2,
-                description=self.model_quality.text,
-                description_leading_space=True,
-                description_decorator="()",
-            )
-            self.quality_score_text = (
-                f"Data Quality Score: {quality_fmt.format_value(model.quality_score)}"
-            )
+            # Integrity assessment is only meaningful when a cleaned validation
+            # score exists to compare against the raw validation score.
+            self.has_integrity_score = model.score_val_cleaned is not None
+            if self.has_integrity_score:
+                self.model_quality = prefs.get_model_quality(model.quality_score)
+                quality_fmt = ValueDescFormat(
+                    precision=2,
+                    description=self.model_quality.text,
+                    description_leading_space=True,
+                    description_decorator="()",
+                )
+                self.quality_score_text = (
+                    f"Integrity Score: {quality_fmt.format_value(model.quality_score)}"
+                )
+                self.integrity_summary_value = ValueDescFormat(
+                    precision=2,
+                    description="/100 Score",
+                ).format_value(model.quality_score)
+            else:
+                self.model_quality = prefs.ModelQuality(
+                    score_min=0.0,
+                    text="N/A",
+                    text_weight="normal",
+                    color=prefs.color_neutral,
+                )
+                self.quality_score_text = "Integrity Score: N/A"
+                self.integrity_summary_value = "N/A"
 
             # Boolean performance checks against global prefs
             self.is_efficient = (
@@ -147,14 +161,19 @@ class AuditPDFRenderer:
         self.total_cpu_time = sum(res.total_duration for res in self.results)
         self.max_ram_observed = max(res.actual_peak_gb for res in self.results)
 
-        # Format the Hardware Context line seen on every page [cite: 14, 22]
+        # Format the Hardware Context line seen on every page
         cores_fmt = ValueDescFormat(
             precision=0,
             description="Cores Detected",
             description_leading_space=True,
             description_decorator="",
         )
-        ram_fmt = DataFormat(data_scale=DataScale.GB)
+        ram_fmt = ValueDescFormat(
+            precision=2,
+            description="GB",
+            description_leading_space=True,
+            description_decorator="",
+        )
         vol_fmt = ValueDescFormat(
             precision=0, description="rows", description_leading_space=True
         )
@@ -187,7 +206,7 @@ class AuditPDFRenderer:
         enum_fmt = EnumFormat()
         dur_fmt = DateTimeFormat(use_duration_format=True, alignment=TextAlignment.LEFT)
 
-        # Build the shared metric table for Executive Summary and Strategic Recommendation [cite: 13, 532]
+        # Build the shared metric table for Executive Summary and Strategic Recommendation
         self._best_model_metrics = pd.DataFrame(
             [
                 ["Winning Model:", f"{enum_fmt.format_value(model.model_type)}"],
@@ -205,7 +224,7 @@ class AuditPDFRenderer:
                 ],
                 [
                     "Integrity:",
-                    f"{ValueDescFormat(precision=2, description='/100 Score').format_value(model.quality_score)}",
+                    self.best_model.integrity_summary_value,
                 ],
                 [
                     "Audit Scale:",
@@ -974,27 +993,36 @@ class AuditPDFRenderer:
 
     def _render_model_legend(self) -> None:
         """
-        Render the model type legend/glossary page with color indicators. [cite: 36]
+        Render the model type legend/glossary page with color indicators.
         """
-        # create_new_page ensures standard branding and footer context [cite: 52, 53, 54]
+        # create_new_page ensures standard branding and footer context
         pdf_page = self.pdf_doc.create_new_page(
             page_name="Legend / Glossary", print_page_name=False
         )
         fig = pdf_page.fig
 
-        # 1. Page Heading [cite: 36]
+        # 1. Page Heading
         fig.text(
             0.5, 0.88, "Model Audit Legend", fontsize=16, weight="bold", ha="center"
         )
 
         # 2. Prepare Data for Two-Column Layout
-        # Includes Regression, Classification, and Unknown task headers
-        model_type_data = ModelTypeData.get_list(
-            sort_order=ModelEnumSortOrder.TASK_TYPE_NAME, include_task_type_headers=True
-        )
+        # Group order is Classification -> Regression -> Unknown.
+        # The right column starts at the Regression header so that no group header
+        # is orphaned at the bottom of a column without its models below it.
+        model_type_data = self._build_model_legend_records()
 
-        legend_len = len(model_type_data)
-        mid = legend_len // 2 + legend_len % 2
+        # Find the index of the second group's header (Regression) to use as the
+        # column split point, ensuring that header always leads the right column.
+        second_group_start = next(
+            (
+                i
+                for i, mtd in enumerate(model_type_data)
+                if mtd.rec_type == ModelTypeDataRecType.HEADER and i > 0
+            ),
+            len(model_type_data) // 2,
+        )
+        mid = second_group_start
 
         # Layout constants for precise positioning
         line_height = 0.04
@@ -1053,15 +1081,46 @@ class AuditPDFRenderer:
                 )
 
         # 6. Bottom Technical Note
+        enum_fmt = EnumFormat()
+        score_name = enum_fmt.format_value(self.best_model.model.scoring)
+        task_name = enum_fmt.format_value(self.best_model.model.task_type)
         fig.text(
             0.5,
             0.1,
-            "Note: Metric 'Score' refers to R² for Regression and Accuracy for Classification.",
+            f"Note: 'Score' refers to {score_name} for this {task_name} audit.",
             fontsize=9,
             style="italic",
             ha="center",
             transform=fig.transFigure,
         )
+
+    @staticmethod
+    def _build_model_legend_records() -> list[ModelTypeData]:
+        """Build ordered legend records for two-column rendering."""
+        group_order = {
+            TaskType.CLASSIFICATION: 0,
+            TaskType.REGRESSION: 1,
+            TaskType.UNKNOWN: 2,
+        }
+
+        data_rows = ModelTypeData.get_list(
+            sort_order=ModelEnumSortOrder.TASK_TYPE_NAME,
+            include_task_type_headers=False,
+        )
+        data_rows = sorted(
+            data_rows,
+            key=lambda mtd: (group_order.get(mtd.task_type, 99), mtd.name),
+        )
+
+        final_list: list[ModelTypeData] = []
+        current_task_type: TaskType | None = None
+        for mtd in data_rows:
+            if mtd.task_type != current_task_type:
+                final_list.append(ModelTypeData.create_header_from_item(mtd))
+                current_task_type = mtd.task_type
+            final_list.append(mtd)
+
+        return final_list
 
     def _get_audit_data(self) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
         """
@@ -1177,12 +1236,8 @@ class AuditPDFRenderer:
                 zorder=0,  # Positioned behind solid bars
             )
 
-        # 4. Resolve Metric Description (R² or F1)
-        score_desc = (
-            "F1"
-            if self.best_model.model.task_type == TaskType.CLASSIFICATION
-            else "$R^2$"
-        )
+        # 4. Resolve Metric Description dynamically from the scoring enum
+        score_desc = EnumFormat().format_value(self.best_model.model.scoring)
 
         # 5. Build Manual Professional Legend
         legend_handles = [
@@ -1319,7 +1374,9 @@ class AuditPDFRenderer:
                 row[x_col],
                 row[y_col],
                 s=float(row["_bubble_size"]),
-                c=self.summary.solid_color_palette.get(row["Model"], prefs.color_neutral),
+                c=self.summary.solid_color_palette.get(
+                    row["Model"], prefs.color_neutral
+                ),
                 alpha=0.92,
                 edgecolors="white",
                 linewidths=0.8,
@@ -1327,43 +1384,17 @@ class AuditPDFRenderer:
             )
 
         ax.set_xscale("linear")
-        ax.set_title("Efficiency: Accuracy vs. Time")
+        score_desc = EnumFormat().format_value(self.best_model.model.scoring)
+        ax.set_title(f"Efficiency: {score_desc} vs. Time")
         ax.set_xlabel("Train Time (s)", fontsize=10)
         ax.set_ylabel("Val Score", fontsize=10)
 
-        # 2. Professional Legend Refinement
-        # Seaborn default legends often include internal headers like 'Model' or 'MAE'.
-        # We strip these to ensure the report remains clean and executive-ready.
-        # Build legend directly from rendered models to avoid seaborn-generated
-        # size/header artifacts and keep ordering aligned to the summary table.
-        model_names = set(self.summary.solid_color_palette.keys())
-        plotted_models = [m for m in plot_df["Model"].tolist() if m in model_names]
-        ordered_models = list(dict.fromkeys(plotted_models))
-        compact_handles: list[Any] = []
-        compact_labels: list[str] = []
-        for lbl in ordered_models:
-            compact_handles.append(
-                Line2D(
-                    [0],
-                    [0],
-                    marker="o",
-                    linestyle="None",
-                    markerfacecolor=self.summary.solid_color_palette.get(
-                        lbl, prefs.color_neutral
-                    ),
-                    markeredgecolor="none",
-                    markersize=6,
-                )
-            )
-            compact_labels.append(lbl)
-
-        final_handles = compact_handles
-        final_labels = compact_labels
-
-        # 3. Append Technical Interpretation Note
-        # We add invisible handles to position the notes at the bottom.
-        final_handles.append(mpatches.Patch(color="none"))
-        final_labels.append("")
+        # 2. Legend: note only (no model name entries).
+        # Model colors are consistent across all charts and documented on the
+        # Legend / Glossary page, so repeating them here adds no information and
+        # risks obscuring bubbles in the tight scatter area.
+        final_handles: list[Any] = []
+        final_labels: list[str] = []
 
         final_handles.append(mpatches.Patch(color="none"))
         if has_valid_mae:
@@ -1383,22 +1414,17 @@ class AuditPDFRenderer:
             title=None,
             loc="best",
             fontsize=8,
-            handlelength=1.0,
-            handletextpad=0.5,
+            handlelength=0,
+            handletextpad=0,
             frameon=True,
-            ncol=2,
-            columnspacing=0.8,
+            ncol=1,
         )
 
-        # 4. Stylize Legend Annotation
+        # 3. Stylize Legend Annotation
         # Apply the neutral color and italics defined in the V1.2.0 preferences.
         if leg.get_texts():
-            plt.setp(
-                leg.get_texts()[-1],
-                color=prefs.color_neutral,
-                fontsize=7,
-                style="italic",
-            )
+            for txt in leg.get_texts():
+                plt.setp(txt, color=prefs.color_neutral, fontsize=7, style="italic")
 
     def _get_narrow_x_limit(
         self, y_train: pd.Series, y_val: pd.Series, percentile: float = 99.5
@@ -1408,7 +1434,7 @@ class AuditPDFRenderer:
         v_limit = np.percentile(y_val, percentile)
         upper_limit = max(t_limit, v_limit)
 
-        # Ensure we capture zero for positive-only data like fare_amount [cite: 136]
+        # Ensure we capture zero for positive-only data like fare_amount
         lower_limit = min(np.percentile(y_train, 0.5), 0.0)
         return float(lower_limit), float(upper_limit)
 
@@ -1577,11 +1603,17 @@ class AuditPDFRenderer:
         ax.set_title("Target Distribution by Class")
         ax.set_xlabel(f"Class Label ({ds.target_column})")
         ax.set_ylabel("Count")
+
+        # Reserve headroom so the boxed top-left categorical annotation clears
+        # the tallest bar.
+        max_count = max(train_values + val_values, default=0)
+        ax.set_ylim(0, max(1, max_count * 1.18))
+
         ax.legend(fontsize=7, loc="upper right")
 
         ax.text(
             0.02,
-            0.98,
+            0.95,
             "Categorical target detected",
             transform=ax.transAxes,
             va="top",
@@ -1589,6 +1621,13 @@ class AuditPDFRenderer:
             fontsize=8,
             style="italic",
             color=prefs.color_neutral,
+            bbox={
+                "boxstyle": "round,pad=0.25,rounding_size=0.15",
+                "facecolor": prefs.color_paper,
+                "edgecolor": prefs.color_neutral,
+                "linewidth": 0.8,
+                "alpha": 0.9,
+            },
         )
 
     def _plot_cumulative_importance(self, sns: Any, ax: Axes) -> None:
@@ -1602,17 +1641,61 @@ class AuditPDFRenderer:
         best_model_name = model.model_type.value
 
         # Retrieve importance data for the top-performing model
-        best_model_importance = self.importance_dict[model.id].copy()
+        best_model_importance = (
+            self.importance_dict[model.id].copy().reset_index(drop=True)
+        )
+
+        def _render_importance_na_message(message: str) -> None:
+            ax.set_title(f"Cumulative Importance\n({best_model_name})")
+            ax.set_axis_off()
+            ax.text(
+                0.5,
+                0.58,
+                message,
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=9,
+                style="italic",
+                color=prefs.color_neutral,
+            )
+
+        if best_model_importance.empty or "importance" not in best_model_importance:
+            _render_importance_na_message(
+                "Feature importance unavailable\nfor this model type."
+            )
+            return
+
         best_model_importance["feature_idx"] = range(1, len(best_model_importance) + 1)
+
+        # Some models (e.g., linear models using |coef|) store raw importance
+        # magnitudes rather than pre-normalized shares. Normalize here so the
+        # cumulative curve and 95% threshold logic are always on a 0-1 scale.
+        imp_series = pd.to_numeric(best_model_importance["importance"], errors="coerce")
+        imp_series = cast(pd.Series, imp_series.fillna(0.0).abs())
+        imp_total = float(imp_series.sum())
+        if imp_total <= 0.0:
+            _render_importance_na_message("No non-zero feature importance values.")
+            return
+
+        if imp_total > 0.0:
+            best_model_importance["importance_plot"] = imp_series / imp_total
+        else:
+            best_model_importance["importance_plot"] = imp_series
+        best_model_importance["cumulative_importance_plot"] = best_model_importance[
+            "importance_plot"
+        ].cumsum()
 
         # 1. Draw the Base Cumulative Line
         sns.lineplot(
             x="feature_idx",
-            y="cumulative_importance",
+            y="cumulative_importance_plot",
             data=best_model_importance,
-            marker="o",
+            marker=None,
             color=self.summary.solid_color_palette[best_model_name],
             ax=ax,
+            linewidth=1.3,
+            alpha=0.6,
             zorder=1,
         )
 
@@ -1633,36 +1716,60 @@ class AuditPDFRenderer:
                 return name
             return name[:MAX_LABEL_CHARS].rstrip("_- ") + f"… [{fid}]"
 
+        cum_series = pd.to_numeric(
+            best_model_importance["cumulative_importance_plot"], errors="coerce"
+        ).fillna(0.0)
+        cum_series = cast(pd.Series, cum_series.reset_index(drop=True))
+        threshold_idx = next(
+            (idx for idx, value in enumerate(cum_series) if value >= 0.95),
+            len(cum_series) - 1,
+        )
+
         for i in range(len(best_model_importance)):
             row = best_model_importance.iloc[i]
-            cum_imp = row["cumulative_importance"]
+            cum_imp = row["cumulative_importance_plot"]
             feat_name = row["feature"]
             feat_id = row.get("id", "")
 
-            # Highlight every feature that contributes to the 95% threshold
-            if i < n_labels or (
-                i > 0
-                and best_model_importance["cumulative_importance"].iloc[i - 1] < 0.95
-            ):
-                dot_color = colors[i % len(colors)]
-                label = _legend_label(feat_name, feat_id)
-                dot = ax.plot(
-                    i + 1,
-                    cum_imp,
-                    marker="o",
-                    color=dot_color,
-                    markersize=6,
-                    label=label,
-                    linestyle="None",
-                    zorder=3,
-                )
-                # Only add to legend up to the cap to avoid chart overlap
-                if len(legend_handles) < MAX_LEGEND_ENTRIES:
-                    legend_handles.append(dot[0])
+            # Draw a marker for every feature point. Points above the 95%
+            # threshold are rendered in a consistent success color.
+            is_above_threshold = i > threshold_idx
+            dot_color = (
+                prefs.color_success if is_above_threshold else colors[i % len(colors)]
+            )
 
-            # Stop highlighting once the 95% threshold is surpassed
-            if cum_imp >= 0.95 and i >= n_labels:
-                break
+            ax.scatter(
+                i + 1,
+                cum_imp,
+                marker="o",
+                s=70,
+                color=dot_color,
+                edgecolors="none",
+                linewidths=0.0,
+                alpha=1.0,
+                zorder=4,
+            )
+
+            # Keep legend focused and bounded: only include features that
+            # contribute to reaching 95% cumulative importance.
+            contributes_to_95 = i < n_labels or (
+                i > 0 and cum_series.iloc[i - 1] < 0.95
+            )
+            if contributes_to_95 and len(legend_handles) < MAX_LEGEND_ENTRIES:
+                label = _legend_label(feat_name, feat_id)
+                legend_handles.append(
+                    Line2D(
+                        [0],
+                        [0],
+                        marker="o",
+                        linestyle="None",
+                        markerfacecolor=dot_color,
+                        markeredgecolor="none",
+                        markeredgewidth=0.0,
+                        markersize=6,
+                        label=label,
+                    )
+                )
 
         # 3. Add 95% Threshold and Multi-Column Legend
         thresh_line = ax.axhline(
@@ -1745,16 +1852,16 @@ class AuditPDFRenderer:
             )
 
             # 4. Populate Visual Diagnostics
-            # Quadrant 1: Performance Benchmark (R² / F1) [cite: 59]
+            # Quadrant 1: Performance Benchmark (R² / F1)
             self._plot_predictive_accuracy(sns, ax_acc)
 
-            # Quadrant 2: Accuracy vs. Training Latency [cite: 61]
+            # Quadrant 2: Accuracy vs. Training Latency
             self._plot_efficiency_scatter(sns, ax_eff)
 
-            # Quadrant 3: Train/Val Population Overlap [cite: 98]
+            # Quadrant 3: Train/Val Population Overlap
             self._plot_target_distribution(ax_dist)
 
-            # Quadrant 4: Pareto Feature Analysis [cite: 100]
+            # Quadrant 4: Pareto Feature Analysis
             self._plot_cumulative_importance(sns, ax_imp)
 
     def _render_cv_vs_final(self) -> None:
@@ -1842,10 +1949,9 @@ class AuditPDFRenderer:
             fontsize=9,
         )
 
+        score_desc = EnumFormat().format_value(self.best_model.model.scoring)
         ax.set_title("Generalization Gap (CV vs Full Data)")
-        ax.set_xlabel(
-            f"Score ({'Accuracy' if self.best_model.model.task_type == TaskType.CLASSIFICATION else '$R^2$'})"
-        )
+        ax.set_xlabel(f"Score ({score_desc})")
         ax.set_ylabel("")
         ax.set_yticks(range(len(self.summary_df)))
         ax.set_yticklabels(
@@ -1867,7 +1973,9 @@ class AuditPDFRenderer:
         ax_params.axis("off")
         ax_params.set_xlim(0.0, 1.0)
         ax_params.set_ylim(0.0, 1.0)
-        ax_params.set_title("Configuration")
+        # Keep deep-dive titles below the styled page header. Global rcParams
+        # use a large title pad that is too high for this compact grid.
+        ax_params.set_title("Configuration", pad=14)
 
         # 1. Prepare Data from Dataclass
         # Converts the model dials into display-friendly string pairs
@@ -1985,13 +2093,12 @@ class AuditPDFRenderer:
                     adjust_mid_x=False,
                 )
         else:
-            # Single column layout
-            ax = fig.add_axes(
-                (target_pos.x0, target_pos.y0, target_pos.width, target_pos.height)
-            )
-            ax.axis("off")
+            # Single-column tables should render directly in the subplot axis.
+            # This preserves the expected top alignment and title spacing.
             render_table_from_page_layout(
-                pdf_page=pdf_page, table_layout=table_layout, using_axis=ax
+                pdf_page=pdf_page,
+                table_layout=table_layout,
+                using_axis=ax_params,
             )
 
     def _plot_feature_importance(
@@ -2024,7 +2131,7 @@ class AuditPDFRenderer:
             # 3. Labeling and Aesthetics
             ax.set_yticks(y_pos)
             ax.set_yticklabels(features, fontsize=9)
-            ax.set_title(f"Top {display_count} Predictors")
+            ax.set_title(f"Top {display_count} Predictors", pad=14)
             ax.set_xlabel("Relative Importance / Weight", fontsize=9)
             ax.set_xlim(0, max_val * 1.15)  # Provide room for value labels
             ax.grid(axis="x", linestyle="--", alpha=0.6)
@@ -2059,16 +2166,23 @@ class AuditPDFRenderer:
             # Fallback for models that do not provide coefficients/importance
             ax.text(
                 0.5,
-                0.3,
+                0.5,
                 "Feature Importance not supported for this model type.",
                 ha="center",
+                va="center",
+                transform=ax.transAxes,
                 fontsize=10,
                 style="italic",
             )
             ax.axis("off")
 
     def _plot_regression_residuals(
-        self, ax: Axes, y_true: pd.Series, y_preds: pd.Series, model_name: str
+        self,
+        ax: Axes,
+        y_true: pd.Series,
+        y_preds: pd.Series,
+        model_name: str,
+        include_title: bool = True,
     ) -> None:
         """
         Visualize the error distribution and heteroscedasticity of a regressor.
@@ -2111,7 +2225,10 @@ class AuditPDFRenderer:
         ax.set_ylim(y_lim)
         ax.set_xlim(x_lim)
 
-        ax.set_title("Residual Analysis")
+        if include_title:
+            # Lower-row titles are intentionally anchored lower so they align
+            # with the inset content region on the bottom quadrants.
+            ax.set_title("Validation Residual Analysis", y=0.86)
         ax.set_xlabel("Predicted Values", fontsize=9)
         ax.set_ylabel("Residuals (Error)", fontsize=9)
 
@@ -2129,9 +2246,30 @@ class AuditPDFRenderer:
         cm = confusion_matrix(y_true, y_preds)
         disp = ConfusionMatrixDisplay(confusion_matrix=cm)
 
+        # The parent axis provides the title and defines the bounding region.
+        ax.set_axis_off()
+        ax.set_title("Validation Confusion Matrix", y=0.86)
+
+        # Place a fixed-size axis in absolute figure coordinates so the matrix
+        # is centred regardless of constrained-layout adjustments.  The
+        # deep-dive page disables the layout engine, so get_position() already
+        # returns the final bounding box.
+        fig = ax.figure
+        pos = ax.get_position()  # Bbox in figure (0–1) coordinates
+        # Keep the matrix slightly smaller/lower within the lower quadrant so
+        # the title has visible padding above and below.
+        side = min(pos.width, pos.height) * 0.66
+        cx = pos.x0 + pos.width / 2
+        # Shift slightly below axis midpoint to leave visual room for the title.
+        cy = pos.y0 + pos.height * 0.40
+        matrix_ax = fig.add_axes((cx - side / 2, cy - side / 2, side, side))
+        # Exclude from any future layout passes so the position stays fixed.
+        matrix_ax.set_in_layout(False)
+
         # Plotting using the Audit Blue theme
-        disp.plot(ax=ax, cmap="Blues", colorbar=False)
-        ax.set_title("Confusion Matrix")
+        disp.plot(ax=matrix_ax, cmap="Blues", colorbar=False)
+        matrix_ax.set_xlabel("")
+        matrix_ax.set_ylabel("")
 
     def _plot_residual_analysis(
         self, config: ModelConfiguration, ax_residuals: Axes
@@ -2148,11 +2286,17 @@ class AuditPDFRenderer:
 
         # 1. Regression Path: Residual Scatter
         if config.task_type == TaskType.REGRESSION:
+            # Keep title on the parent axis and render the residual plot in a
+            # shorter inset so its top aligns with the misses-table content.
+            ax_residuals.set_axis_off()
+            ax_residuals.set_title("Validation Residual Analysis", y=0.86)
+            residual_plot_ax = ax_residuals.inset_axes((0.08, 0.14, 0.84, 0.76))
             self._plot_regression_residuals(
-                ax=ax_residuals,
+                ax=residual_plot_ax,
                 y_true=self.summary.data_splits.val_target,
                 y_preds=config.preds_val,
                 model_name=config.model_type.value,
+                include_title=False,
             )
 
         # 2. Classification Path: Sampled Confusion Matrix
@@ -2203,7 +2347,7 @@ class AuditPDFRenderer:
         """
         Render a table of the top regression errors (outliers).
         """
-        ax.set_title("Worst Regression Misses (Outliers)")
+        ax.set_title("Top Validation Misses (Regression)", y=0.86)
         ax.axis("off")
 
         # 1. Error Magnitude Calculation
@@ -2287,9 +2431,9 @@ class AuditPDFRenderer:
         # 5. Render
         table = Table(
             data=df,
-            max_table_height=1.0,
+            max_table_height=0.90,
             mid_x=0.5,
-            top_y=1.0,
+            top_y=0.90,
             fontsize=10,
             columns=table_columns,
             cell_edge_linewidth=TableEdgeLinewidth.all_edges(0.4),
@@ -2315,7 +2459,7 @@ class AuditPDFRenderer:
         """
         Render a table of classification "confidence misses" (where the model was confidently wrong).
         """
-        ax.set_title(f"Top {n} Model Misses (Outliers)")
+        ax.set_title(f"Top {n} Validation Misses", y=0.86)
         ax.axis("off")
 
         # 1. Probability Logic: Find where the model was wrong
@@ -2349,8 +2493,72 @@ class AuditPDFRenderer:
             df[col] = [fmt.format_value(v) for v in df[col]]
 
         # 3. Table Rendering
-        # (Standard styling applied similarly to regression misses)
-        # ... [omitted for brevity, follows same pattern as above]
+        if df.empty:
+            ax.text(
+                0.5,
+                0.45,
+                "No validation misses found.",
+                ha="center",
+                va="center",
+                style="italic",
+            )
+            return
+
+        table_columns: dict[str, TableColumn] = {}
+        header_edge = TableEdgeColor(
+            left=prefs.color_neutral, right=prefs.color_neutral
+        )
+        closed_edge = TableEdgeColor.closed(color=prefs.color_neutral)
+
+        for col in df.columns:
+            align = col_fmts[col].matplot_alignment()
+            table_columns[col] = TableColumn(
+                header_style=TableColumnStyle(
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                    edge_color=header_edge,
+                    face_color="black",
+                    text_color="white",
+                ),
+                detail_style=TableColumnStyle(
+                    ha=align,
+                    va="center",
+                    fontfamily="monospace",
+                    edge_color=closed_edge,
+                    face_color=prefs.color_paper,
+                    text_color=prefs.color_neutral,
+                ),
+                even_row_style=TableColumnStyle(
+                    ha=align,
+                    va="center",
+                    fontfamily="monospace",
+                    edge_color=closed_edge,
+                    face_color=prefs.color_light_gray,
+                    text_color=prefs.color_neutral,
+                ),
+                has_consistent_width=True,
+                has_consistent_height=True,
+                lpad=10.0,
+                rpad=15.0,
+            )
+
+        table = Table(
+            data=df,
+            max_table_height=0.90,
+            mid_x=0.5,
+            top_y=0.90,
+            fontsize=10,
+            columns=table_columns,
+            cell_edge_linewidth=TableEdgeLinewidth.all_edges(0.4),
+            table_edge_linewidth=TableEdgeLinewidth(),
+            use_full_axis_width=True,
+            header_tpad=20.0,
+            header_bpad=0.0,
+            detail_tpad=12.0,
+            detail_bpad=12.0,
+        )
+        render_table(pdf_page=pdf_page, table=table, ax=ax, renderer=renderer)
 
     def _render_error_analysis(
         self,
@@ -2418,19 +2626,34 @@ class AuditPDFRenderer:
         )
         fig = pdf_page.fig
 
+        # Disable constrained_layout explicitly.  Using None here would defer to
+        # rcParams (which enable constrained_layout globally in this project),
+        # causing Matplotlib to override our manual GridSpec bounds on draw.
+        fig.set_layout_engine("none")
+
         # Access low-level renderer for precise table coordinate calculations
         fig.draw_without_rendering()
         canvas: Any = fig.canvas
         renderer: RendererBase = canvas.get_renderer()
-        pdf_page.layout_engine.set(w_pad=0.0, h_pad=0.0, hspace=0.1, wspace=0.1)
 
-        # 2. Define the Dashboard Grid (3 rows x 2 columns)
-        # Row 0: Centered Header | Row 1: Config & Features | Row 2: Residuals & Errors
-        gs = fig.add_gridspec(3, 2, height_ratios=[0.1, 0.45, 0.45])
-        ax_params = fig.add_subplot(gs[1, 0])
-        ax_features = fig.add_subplot(gs[1, 1])
-        ax_residuals = fig.add_subplot(gs[2, 0])
-        ax_worst_errors = fig.add_subplot(gs[2, 1])
+        # 2. Define the Dashboard Grid (2 rows x 2 columns) with explicit,
+        # fixed margins so positions are identical across all model pages.
+        # Row 0: Config & Features | Row 1: Residuals & Errors
+        gs = fig.add_gridspec(
+            2,
+            2,
+            height_ratios=[0.5, 0.5],
+            left=0.09,
+            right=0.93,
+            bottom=0.09,
+            top=0.81,
+            hspace=0.30,
+            wspace=0.12,
+        )
+        ax_params = fig.add_subplot(gs[0, 0])
+        ax_features = fig.add_subplot(gs[0, 1])
+        ax_residuals = fig.add_subplot(gs[1, 0])
+        ax_worst_errors = fig.add_subplot(gs[1, 1])
 
         # 3. Styled Page Header
         fig.text(
@@ -2454,16 +2677,17 @@ class AuditPDFRenderer:
         # 4. Prepare Final Performance Strings
         test_metrics_text = None
         if config.has_test_set_evaluation_scores:
+            score_label = EnumFormat().format_value(config.scoring)
             if config.task_type is TaskType.REGRESSION:
                 test_metrics_text = (
                     f"Test Set Performance\n"
-                    f"R2:  {prefs.score_format.format_value(config.score_test)}\n"
+                    f"{score_label}:  {prefs.score_format.format_value(config.score_test)}\n"
                     f"MAE: {prefs.score_format.format_value(config.mae_test)}"
                 )
             else:
                 test_metrics_text = (
                     f"Test Set Performance\n"
-                    f"Accuracy: {prefs.score_format.format_value(config.score_test)}"
+                    f"{score_label}: {prefs.score_format.format_value(config.score_test)}"
                 )
 
         # 5. Render Top Right: Feature Importance
@@ -2486,8 +2710,6 @@ class AuditPDFRenderer:
         )
 
         # 8. Render Top Left: Identity & Hyperparameters
-        # Critical Layout Note: This is rendered last so it can align with the
-        # adjusted bounds of ax_residuals (which may have shifted due to labels).
         self._plot_model_hyperparameters(
             pdf_page=pdf_page, config=config, ax_params=ax_params, renderer=renderer
         )
@@ -2570,6 +2792,12 @@ class AuditPDFRenderer:
         # 3. Data Formatting and Preparation
         table_df = self.summary_df[col_headers].copy()
         str_fmt = StringFormat()
+        peak_ram_fmt = ValueDescFormat(
+            precision=2,
+            description="GB",
+            description_leading_space=True,
+            description_decorator="",
+        )
 
         # Format strings, scores, and resource metrics using preferences
         for col in ["Model", "Abbr"]:
@@ -2578,8 +2806,10 @@ class AuditPDFRenderer:
         for col in ["CV Score (Tuning)", "Val Score", "Test Score"]:
             table_df[col] = table_df[col].apply(prefs.score_format.format_value)
 
+        # "Actual Peak RAM" is already stored in GB on the model config.
+        # Use a plain value+suffix formatter to avoid re-scaling.
         table_df["Actual Peak RAM"] = table_df["Actual Peak RAM"].apply(
-            prefs.gb_format.format_value
+            peak_ram_fmt.format_value
         )
         table_df["Train Time (s)"] = table_df["Train Time (s)"].apply(
             prefs._train_time_format.format_value
@@ -2611,7 +2841,7 @@ class AuditPDFRenderer:
         """
         Render the strategic recommendation page with final verdict and audit notes.
         """
-        # 1. Initialize Page and Full-Page Axis [cite: 537]
+        # 1. Initialize Page and Full-Page Axis
         pdf_page = self.pdf_doc.create_new_page(
             page_name="Recommendation", print_page_name=False, include_footer=False
         )
@@ -2652,14 +2882,14 @@ class AuditPDFRenderer:
             df=self.strategic_recommendation_metrics,
         )
 
-        # 4. Dynamic Audit Notes [cite: 533, 534]
+        # 4. Dynamic Audit Notes
         table_rect = table_layout.pages[0].rect
         recommendation_text: list[str] = []
         buffer_width = int(table_rect.get_width() * 160)
         model = self.best_model.model
         score_cv = model.score_cv if model.score_cv is not None else 0.0
 
-        # Note: Significant improvement check [cite: 534]
+        # Note: Significant improvement check
         if model.val_score - score_cv > 0.05:
             recommendation_text.append(
                 format_text(
@@ -2672,7 +2902,7 @@ class AuditPDFRenderer:
                 )
             )
 
-        # Note: Memory/Sampling constraint check [cite: 534]
+        # Note: Memory/Sampling constraint check
         if model.sampling_factor < 0.3:
             recommendation_text.append(
                 format_text(
@@ -2686,7 +2916,7 @@ class AuditPDFRenderer:
                 )
             )
 
-        # 5. Render Notes Section if applicable [cite: 533, 534]
+        # 5. Render Notes Section if applicable
         if recommendation_text:
             y_pos = table_rect.get_y() - 0.1
             ax.text(

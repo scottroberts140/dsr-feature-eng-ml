@@ -1,4 +1,5 @@
 import dataclasses
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -26,6 +27,31 @@ from dsr_feature_eng_ml.models.random_forest import (
     RandomForestRegressorModel,
     RandomForestRegressorParams,
 )
+
+
+class _FakeModelSpec:
+    """Stub model spec used to force deterministic __setstate__ behavior tests."""
+
+    def __init__(self, base_config: ModelConfiguration):
+        self.base_config = base_config
+
+    def fit_and_evaluate_val(self, *args, **kwargs):
+        return dataclasses.replace(
+            self.base_config,
+            score_val=0.111111,
+            score_train=0.111111,
+            preds_val=pd.Series([1, 0]),
+            probs_val=pd.DataFrame({"p": [0.4, 0.6]}),
+        )
+
+    def evaluate_test_set_performance(self, *args, **kwargs):
+        return dataclasses.replace(
+            kwargs["config"],
+            score_test=0.222222,
+            preds_test=pd.Series([1, 1]),
+            probs_test=pd.DataFrame({"p": [0.7, 0.8]}),
+            test_mean=123.0,
+        )
 
 
 def test_audit_logger_redirection(tmp_path):
@@ -303,3 +329,59 @@ def test_serialization_sidecar_logic(populated_summary, tmp_path):
     # Verify data is back
     assert populated_summary.results[0].preds_val is not None
     assert populated_summary.results[0].preds_val.iloc[0] == 20.0
+
+
+def test_setstate_preserves_persisted_scores_when_backfilling_predictions(mini_taxi_df):
+    """Loading snapshots should not mutate persisted val/test scalar metrics."""
+    target = "fare_amount"
+    features = [c for c in mini_taxi_df.columns if c != target]
+    splits = DataSplits.from_data_source(
+        mini_taxi_df,
+        features_to_include=features,
+        target_column=target,
+        test_size=0.2,
+        valid_size=0.2,
+        original_row_count=len(mini_taxi_df),
+        random_state=75,
+    )
+
+    cfg = ModelConfiguration(
+        id="cfg-1",
+        model_type=ModelType.RANDOM_FOREST_REGRESSOR,
+        task_type=TaskType.REGRESSION,
+        balancing_strategy=BalancingStrategy.NONE,
+        optimization_strategy=OptimizationStrategy.RANDOM_SEARCH,
+        model_params=RandomForestRegressorParams(),
+        cv=5,
+        scoring=ScoringMetric.R2,
+        n_jobs=1,
+        n_iter=5,
+        has_val_set_evaluation_scores=True,
+        has_test_set_evaluation_scores=True,
+        score_val=0.837581,
+        score_test=0.829512,
+        preds_val=None,
+        preds_test=None,
+    )
+
+    summary = ModelAuditSummary(
+        data_splits=splits,
+        results=[cfg],
+        dataset_name="SetState Preserve Scores",
+        original_row_count=len(mini_taxi_df),
+    )
+
+    state = summary.__dict__.copy()
+
+    fake_model = _FakeModelSpec(cfg)
+    with patch(
+        "dsr_feature_eng_ml.evaluation.model_audit_summary.ModelSpecification.create_model_from_config",
+        return_value=fake_model,
+    ):
+        summary.__setstate__(state)
+
+    restored = summary.results[0]
+    assert restored.score_val == 0.837581
+    assert restored.score_test == 0.829512
+    assert restored.preds_val is not None
+    assert restored.preds_test is not None

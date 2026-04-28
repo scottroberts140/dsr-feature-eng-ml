@@ -158,7 +158,7 @@ class ModelAuditSummary:
         # Initialize Audit Timestamp
         if not audit_timestamp:
             ts_fmt = DateTimeFormat(
-                date_format="%Y%m%d", time_format="%H%M", separator="_"
+                date_format="%Y%m%d", time_format="%H%M%S", separator="_"
             )
             self.audit_timestamp = ts_fmt.format_value(datetime.now())
         else:
@@ -238,19 +238,8 @@ class ModelAuditSummary:
                 if val_res:
                     current_cfg = dataclasses.replace(
                         current_cfg,
-                        score_train=val_res.score_train,
-                        score_val=val_res.score_val,
-                        score_val_cleaned=val_res.score_val_cleaned,
-                        mae_train=val_res.mae_train,
-                        mae_val=val_res.mae_val,
-                        mse_train=val_res.mse_train,
-                        mse_val=val_res.mse_val,
-                        r2_train=val_res.r2_train,
-                        r2_val=val_res.r2_val,
-                        r2_val_cleaned=val_res.r2_val_cleaned,
-                        accuracy_train=val_res.accuracy_train,
-                        accuracy_val=val_res.accuracy_val,
-                        accuracy_val_cleaned=val_res.accuracy_val_cleaned,
+                        # Preserve persisted scalar metrics; only backfill
+                        # missing prediction artifacts needed for reporting.
                         preds_val=val_res.preds_val,
                         probs_val=val_res.probs_val,
                     )
@@ -265,18 +254,10 @@ class ModelAuditSummary:
                 if test_res:
                     current_cfg = dataclasses.replace(
                         current_cfg,
-                        score_test=test_res.score_test,
-                        mae_test=test_res.mae_test,
-                        mse_test=test_res.mse_test,
-                        r2_test=test_res.r2_test,
-                        accuracy_test=test_res.accuracy_test,
+                        # Preserve persisted scalar metrics; only backfill
+                        # missing prediction artifacts needed for reporting.
                         preds_test=test_res.preds_test,
                         probs_test=test_res.probs_test,
-                        test_mean=test_res.test_mean,
-                        test_std=test_res.test_std,
-                        test_median=test_res.test_median,
-                        test_skew=test_res.test_skew,
-                        test_kurtosis=test_res.test_kurtosis,
                     )
 
             new_results.append(current_cfg)
