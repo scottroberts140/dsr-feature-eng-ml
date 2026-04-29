@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Type
+from typing import Any, Literal
 
 from dsr_utils import format_label_value_pairs
 from sklearn.linear_model import RidgeClassifier as SklearnRidgeClassifier
@@ -96,7 +96,7 @@ class RidgeClassifierModel(
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[RidgeClassifierParams] = None,
+        params: RidgeClassifierParams | None = None,
         task_type: TaskType = TaskType.CLASSIFICATION,
         scoring: ScoringMetric = ScoringMetric.ACCURACY,
         n_jobs: int = 3,
@@ -151,12 +151,12 @@ class RidgeClassifierModel(
     def model_dials(self, value: RidgeClassifierParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[SklearnRidgeClassifier]:
+    def get_estimator_class(self) -> type[SklearnRidgeClassifier]:
         """Return the scikit-learn RidgeClassifier class."""
         return SklearnRidgeClassifier
 
     def create_estimator(
-        self, parameters: Optional[RidgeClassifierParams] = None
+        self, parameters: RidgeClassifierParams | None = None
     ) -> SklearnRidgeClassifier:
         """
         Instantiate a raw scikit-learn RidgeClassifier estimator.

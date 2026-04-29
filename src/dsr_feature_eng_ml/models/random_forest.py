@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping, Optional, Type, TypeVar, cast, get_args
+from typing import Any, Literal, Mapping, TypeVar, cast, get_args
 
 from dsr_utils import format_label_value_pairs
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -168,7 +168,7 @@ class RandomForestClassifierModel(
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[RandomForestClassifierParams] = None,
+        params: RandomForestClassifierParams | None = None,
         scoring: ScoringMetric = ScoringMetric.F1,
         n_jobs: int = 3,
         n_iter: int = -1,
@@ -214,12 +214,12 @@ class RandomForestClassifierModel(
     def model_dials(self, value: RandomForestClassifierParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[RandomForestClassifier]:
+    def get_estimator_class(self) -> type[RandomForestClassifier]:
         """Return the Scikit-Learn RandomForestClassifier class."""
         return RandomForestClassifier
 
     def create_estimator(
-        self, parameters: Optional[RandomForestClassifierParams] = None
+        self, parameters: RandomForestClassifierParams | None = None
     ) -> RandomForestClassifier:
         """Instantiate a raw Scikit-Learn RandomForestClassifier estimator."""
         p = parameters or self.model_dials
@@ -257,7 +257,7 @@ class RandomForestRegressorModel(
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[RandomForestRegressorParams] = None,
+        params: RandomForestRegressorParams | None = None,
         scoring: ScoringMetric = ScoringMetric.R2,
         n_jobs: int = 3,
         n_iter: int = -1,
@@ -303,12 +303,12 @@ class RandomForestRegressorModel(
     def model_dials(self, value: RandomForestRegressorParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[RandomForestRegressor]:
+    def get_estimator_class(self) -> type[RandomForestRegressor]:
         """Return the Scikit-Learn RandomForestRegressor class."""
         return RandomForestRegressor
 
     def create_estimator(
-        self, parameters: Optional[RandomForestParams] = None
+        self, parameters: RandomForestParams | None = None
     ) -> RandomForestRegressor:
         """Instantiate a raw Scikit-Learn RandomForestRegressor estimator."""
         p = parameters or self.model_dials

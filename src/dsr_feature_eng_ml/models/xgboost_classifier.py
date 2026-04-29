@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Type
+from typing import Any
 
 from dsr_utils import format_label_value_pairs
 from sklearn.base import BaseEstimator, ClassifierMixin
@@ -172,7 +172,7 @@ class XGBClassifierModel(
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[XGBClassifierParams] = None,
+        params: XGBClassifierParams | None = None,
         task_type: TaskType = TaskType.CLASSIFICATION,
         scoring: ScoringMetric = ScoringMetric.F1,
         n_jobs: int = 3,
@@ -227,12 +227,12 @@ class XGBClassifierModel(
     def model_dials(self, value: XGBClassifierParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[EncodedXGBClassifier]:
+    def get_estimator_class(self) -> type[EncodedXGBClassifier]:
         """Return the XGBoost adapter class with label encoding support."""
         return EncodedXGBClassifier
 
     def create_estimator(
-        self, parameters: Optional[XGBClassifierParams] = None
+        self, parameters: XGBClassifierParams | None = None
     ) -> EncodedXGBClassifier:
         """
         Instantiate a raw XGBClassifier estimator.

@@ -5,6 +5,8 @@ from __future__ import annotations
 import dataclasses
 import enum
 import inspect
+import logging
+import math
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -13,11 +15,8 @@ from typing import (
     Any,
     Generic,
     Mapping,
-    Optional,
     Protocol,
     Self,
-    Tuple,
-    Type,
     TypeGuard,
     TypeVar,
     cast,
@@ -48,6 +47,8 @@ if TYPE_CHECKING:
     )
 
 from dsr_feature_eng_ml.prefs_instance import prefs
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -172,9 +173,7 @@ def calculate_search_iterations(
     int
         The suggested number of iterations for a RandomSearch.
     """
-    import math
-
-    # 1. Calculate the total size of the grid
+    # Total size of the grid
     total_combinations = 1
     for values in grid.values():
         # If it's a distribution (SciPy rvs), it has infinite size.
@@ -210,7 +209,7 @@ class ModelParams(ABC):
         The method used to select these parameters (Manual, Grid, or Random).
     """
 
-    random_state: Optional[int] = None
+    random_state: int | None = None
     optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL
 
     @abstractmethod
@@ -255,16 +254,16 @@ class ModelParams(ABC):
         if self.optimization_strategy == OptimizationStrategy.RANDOM_SEARCH:
             return calculate_search_iterations(params_dict, min_iter=-1)
 
-        # GRID_SEARCH Logic...
-        import math
+        if self.optimization_strategy == OptimizationStrategy.GRID_SEARCH:
+            nc = math.prod(
+                [
+                    len(v) if isinstance(v, (list, tuple)) else 1
+                    for v in params_dict.values()
+                ]
+            )
+            return max(1, nc)
 
-        nc = math.prod(
-            [
-                len(v) if isinstance(v, (list, tuple)) else 1
-                for v in params_dict.values()
-            ]
-        )
-        return max(1, nc)
+        return 1
 
     @staticmethod
     @abstractmethod
@@ -328,13 +327,13 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         The method used for parameter tuning (MANUAL, GRID, or RANDOM).
     """
 
-    params_class: Type[T_Params]
+    params_class: type[T_Params]
 
     def __init__(
         self,
-        cv: Optional[int],
+        cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[T_Params] = None,
+        params: T_Params | None = None,
         n_jobs: int = 3,
         n_iter: int = -1,
         max_iter: int = 1000,
@@ -365,10 +364,10 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         # Managed Mutability placeholders
         self.predicted_train = pd.Series(dtype=float)
         self.predicted_val = pd.Series(dtype=float)
-        self.estimator: Optional[T_Estimator] = None
+        self.estimator: T_Estimator | None = None
 
     @abstractmethod
-    def get_estimator_class(self) -> Type[T_Estimator]:
+    def get_estimator_class(self) -> type[T_Estimator]:
         """Return the scikit-learn estimator class reference."""
         pass
 
@@ -431,13 +430,13 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         return cv_count * nc
 
     @property
-    def feature_importances(self) -> Optional[np.ndarray]:
+    def feature_importances(self) -> np.ndarray | None:
         """
         Extract importance/coefficients from the fitted estimator.
 
         Returns
         -------
-        Optional[np.ndarray]
+        np.ndarray or None
             An array of feature weights, normalized as absolute values
             for linear models. Returns None if model is not fitted.
         """
@@ -458,7 +457,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         return None
 
     @abstractmethod
-    def create_estimator(self, parameters: Optional[T_Params] = None) -> T_Estimator:
+    def create_estimator(self, parameters: T_Params | None = None) -> T_Estimator:
         """Instantiate a raw scikit-learn estimator with current settings."""
         pass
 
@@ -497,11 +496,11 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         data_splits: DataSplits,
         method: OptimizationStrategy,
         features_to_fit_set: set[FeatureMetadata],
-        custom_grid: Optional[dict[str, Any]] = None,
+        custom_grid: dict[str, Any] | None = None,
         use_combined_data: bool = False,
-        max_sample_size: Optional[int] = None,
+        max_sample_size: int | None = None,
         perform_memory_check: bool = True,
-    ) -> Tuple[T_Params, float, bool, float, float, float, float]:
+    ) -> tuple[T_Params, float, bool, float, float, float, float]:
         """
         Execute hyperparameter optimization and update model parameters.
 
@@ -562,7 +561,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         model_multiplier, sampling_factor = 1.0, 1.0
 
         # Internal Helper: Sampling
-        def _apply_sampling(size: int) -> Tuple[pd.DataFrame, pd.Series[Any], float]:
+        def _apply_sampling(size: int) -> tuple[pd.DataFrame, pd.Series[Any], float]:
             if size >= total_rows:
                 return features, target, 1.0
 
@@ -577,12 +576,16 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             max_sample_size = total_rows
 
         if total_rows > max_sample_size:
-            print(f"⚠️ Dataset ({total_rows:,} rows) exceeds tuning safety limit.")
+            logger.warning(
+                "Dataset (%s rows) exceeds tuning safety limit.", f"{total_rows:,}"
+            )
             tuning_features, tuning_target, sampling_factor = _apply_sampling(
                 max_sample_size
             )
-            print(
-                f"📉 Sampling {len(tuning_features):,} rows ({sampling_factor:.1%}) for optimization..."
+            logger.info(
+                "Sampling %s rows (%.1f%%) for optimization.",
+                f"{len(tuning_features):,}",
+                sampling_factor * 100,
             )
         else:
             tuning_features, tuning_target = features, target
@@ -597,9 +600,10 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
 
         # 4. Emergency Downsampling (OOM Prevention)
         if memory_risk_triggered:
-            print(
-                f"🚨 DANGER: Predicted peak {prefs.gb_format.format_value(estimated_peak_gb)} "
-                f"exceeds safety buffer of available {prefs.gb_format.format_value(available_gb)}."
+            logger.warning(
+                "DANGER: Predicted peak %s exceeds safety buffer of available %s.",
+                prefs.gb_format.format_value(estimated_peak_gb),
+                prefs.gb_format.format_value(available_gb),
             )
 
             # Reduce sample size based on the ratio of available vs required memory
@@ -609,8 +613,10 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             tuning_features, tuning_target, sampling_factor = _apply_sampling(
                 safety_limit
             )
-            print(
-                f"📉 Emergency downsampling to {len(tuning_features):,} rows ({sampling_factor:.1%})..."
+            logger.info(
+                "Emergency downsampling to %s rows (%.1f%%).",
+                f"{len(tuning_features):,}",
+                sampling_factor * 100,
             )
 
         # 5. Build Search Space
@@ -712,7 +718,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         data_splits: DataSplits,
         features_to_fit_set: set[FeatureMetadata],
         use_combined_data: bool = False,
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """
         Train the estimator and capture memory performance metrics.
 
@@ -778,7 +784,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         data_splits: DataSplits,
         id: str,
         features_to_fit_set: set[FeatureMetadata],
-        score_cv: Optional[float] = None,
+        score_cv: float | None = None,
         use_combined_data: bool = False,
         filter_outliers: bool = False,
         outlier_count: int = prefs.default_worst_errors_n,
@@ -841,7 +847,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         targets: pd.Series[Any],
         filter_outliers: bool,
         outlier_count: int,
-    ) -> Tuple[float, Optional[float], pd.Series, Optional[pd.DataFrame]]:
+    ) -> tuple[float, float | None, pd.Series, pd.DataFrame | None]:
         """
         Compute weighted F1 scores and extract class probabilities.
 
@@ -877,8 +883,8 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
 
         # 2. Generate raw outputs
         raw_preds = estimator.predict(features)
-        raw_probs: Optional[np.ndarray] = None
-        probs: Optional[pd.DataFrame] = None
+        raw_probs: np.ndarray | None = None
+        probs: pd.DataFrame | None = None
         if self.is_probabilistic(estimator):
             # Cast once protocol compliance is verified
             prob_estimator = cast(ProbabilisticClassifier, estimator)
@@ -894,7 +900,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         f1 = float(f1_score(targets, preds, average="weighted"))
 
         # 5. Outlier Filtering (Confident Mistakes)
-        f1_cleaned: Optional[float] = None
+        f1_cleaned: float | None = None
 
         if filter_outliers and raw_probs is not None:
             # Mask where prediction is wrong
@@ -932,7 +938,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         targets: pd.Series[Any],
         filter_outliers: bool,
         outlier_count: int,
-    ) -> tuple[float, float, float, Optional[float], pd.Series]:
+    ) -> tuple[float, float, float, float | None, pd.Series]:
         """
         Compute standard regression metrics and residual-based 'cleaned' R2.
 
@@ -975,7 +981,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         r2 = float(r2_score(targets, preds))
 
         # 4. Outlier Filtering (Largest Residuals)
-        r2_cleaned: Optional[float] = None
+        r2_cleaned: float | None = None
 
         if filter_outliers:
             # Calculate absolute residuals
@@ -1003,8 +1009,8 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         mem_used: float,
         mem_peak: float,
         use_combined_data: bool,
-        params: Optional[T_Params] = None,
-        score_cv: Optional[float] = None,
+        params: T_Params | None = None,
+        score_cv: float | None = None,
         filter_outliers: bool = False,
         outlier_count: int = prefs.default_worst_errors_n,
     ) -> ModelConfiguration:
@@ -1448,7 +1454,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
     def instantiate_model(
         model_cls: type[ModelSpecification],
         strategy: BalancingStrategy,
-        params: Optional[ModelParams],
+        params: ModelParams | None,
         cv: int,
         optimization_strategy: OptimizationStrategy,
         **kwargs: Any,
@@ -1473,7 +1479,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
     @classmethod
     def create_model_from_config(
         cls, config: ModelConfiguration
-    ) -> Optional[ModelSpecification]:
+    ) -> ModelSpecification | None:
         """Reconstruct a ModelSpecification instance from a configuration object."""
         model_cls = config.model_type.model_class
 
@@ -1492,8 +1498,9 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
                 large_gap=config.large_gap,
             )
 
-        print(
-            f"⚠️ Unable to instantiate model class: ModelType.{config.model_type.name} has no associated class."
+        logger.warning(
+            "Unable to instantiate model class: ModelType.%s has no associated class.",
+            config.model_type.name,
         )
         return None
 

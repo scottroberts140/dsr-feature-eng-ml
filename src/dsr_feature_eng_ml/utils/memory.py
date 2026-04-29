@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Tuple
+import logging
+import os
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import psutil
@@ -19,7 +21,7 @@ from dsr_utils.formatting import (
 if TYPE_CHECKING:
     from dsr_feature_eng_ml.models.model_specification import ModelSpecification
 
-import os
+logger = logging.getLogger(__name__)
 
 
 def validate_n_jobs(value: int) -> int:
@@ -49,7 +51,7 @@ def validate_n_jobs(value: int) -> int:
 
 def check_memory_risk(
     df: pd.DataFrame, model: "ModelSpecification", n_jobs: int = -1
-) -> Tuple[bool, float, float, float]:
+) -> tuple[bool, float, float, float]:
     """
     Estimate system memory risk for model tuning and display a summary.
 
@@ -124,7 +126,7 @@ def check_memory_risk(
         ("Risk", risk_format.format_value(risk)),
     ]
 
-    print("\n--- Memory Risk Audit ---")
-    print(format_label_value_pairs(stats))
+    logger.info("\n--- Memory Risk Audit ---")
+    logger.info(format_label_value_pairs(stats))
 
     return risk, estimated_peak_gb, available_gb, model_multiplier

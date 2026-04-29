@@ -2,6 +2,7 @@
 Tests for dsr_feature_eng_ml.evaluation module.
 """
 
+import logging
 from dataclasses import replace
 
 import numpy as np
@@ -196,26 +197,22 @@ def test_importance_calculation_and_sorting(mock_feature_set):
     assert mfi.feature_importances.iloc[1]["cumulative_importance"] == 0.85
 
 
-def test_threshold_index_identification(mock_feature_set):
-    """Verify the 80% and 95% threshold logic used in charts."""
-    # Distribution matching the audit cumulative curve
+def test_importance_to_dict_shape(mock_feature_set):
+    """Verify serialized importance payload includes expected core fields only."""
     importances = np.array([0.75, 0.15, 0.06, 0.04])
     mfi = ModelFeatureImportance(mock_feature_set, importances)
-    mfi.calc_threshold_indices()
+    payload = mfi.to_dict(include_full_df=True)
 
-    # 80% Threshold: Feature 1 (0.75) < 0.8, Feature 2 (0.75+0.15=0.9) > 0.8
-    assert mfi.threshold_80_idx == 2
-
-    # 95% Threshold: Feature 3 (0.9 + 0.06 = 0.96) pushes it over 0.95
-    # The logic adds +1 for the next feature boundary or clamps to total
-    assert mfi.threshold_95_idx <= len(mock_feature_set)
+    assert "features" in payload
+    assert "feature_importances" in payload
+    assert "threshold_80_idx" not in payload
+    assert "threshold_95_idx" not in payload
 
 
 def test_empty_importance_handling():
     """Ensure the 'empty' factory works for initializations."""
     empty_mfi = ModelFeatureImportance.empty()
     assert len(empty_mfi.features) == 0
-    assert empty_mfi.threshold_80_idx == 0
 
 
 def test_datasplits_factory_and_leakage(mini_taxi_df):
@@ -274,6 +271,29 @@ def test_inverse_transform_logic(mini_taxi_df):
     original_val = df_inv.iloc[0]["trip_distance"]
     # Verify it matches a realistic taxi trip distance (likely > 0)
     assert original_val >= 0
+
+
+def test_from_data_splits_rejects_missing_features(mini_taxi_df):
+    """Verify from_data_splits raises a clear error for unknown features."""
+    target = "fare_amount"
+    features = [c for c in mini_taxi_df.columns if c != target]
+
+    splits = DataSplits.from_data_source(
+        src=mini_taxi_df,
+        features_to_include=features,
+        target_column=target,
+        test_size=0.2,
+        valid_size=0.2,
+        original_row_count=len(mini_taxi_df),
+        random_state=42,
+        scale_features=True,
+    )
+
+    with pytest.raises(ValueError, match="Features not found in source split"):
+        DataSplits.from_data_splits(
+            src=splits,
+            features_to_include=["trip_distance", "missing_feature"],
+        )
 
 
 def test_resampling_strategies(mini_taxi_df):
@@ -453,8 +473,10 @@ def test_risk_threshold_loading():
     assert config.anomaly_threshold > 0.0
 
 
-def test_data_splits_skip_encoding_falls_back_for_non_numeric_columns(capsys):
+def test_data_splits_skip_encoding_falls_back_for_non_numeric_columns(caplog):
     """Verify string skip_encoding columns fall back to one-hot encoding."""
+    caplog.set_level(logging.INFO, logger="dsr_feature_eng_ml.evaluation.schema")
+
     df = pd.DataFrame(
         {
             "city": ["A", "B", "A", "C", "B", "C", "A", "B", "C", "A"],
@@ -475,7 +497,113 @@ def test_data_splits_skip_encoding_falls_back_for_non_numeric_columns(capsys):
         skip_encoding=["city"],
     )
 
-    captured = capsys.readouterr()
-    assert "skip_encoding fallback to one-hot" in captured.out
+    assert "skip_encoding fallback to one-hot" in caplog.text
     assert any(col.startswith("city_") for col in splits.train_features.columns)
     assert not splits.train_features["num"].isna().all()
+
+
+def test_model_configuration_empty_sentinel_values():
+    """Verify that empty() populates all identity fields with correct sentinels."""
+    cfg = ModelConfiguration.empty(model_params=RandomForestRegressorParams())
+
+    assert cfg.id == "00"
+    assert cfg.model_type == ModelType.UNKNOWN
+    assert cfg.task_type == TaskType.UNKNOWN
+    assert cfg.cv == 0
+    assert cfg.score_cv is None
+    assert cfg.score_train is None
+    assert cfg.score_val is None
+    assert cfg.r2_train is None
+    assert cfg.mae_train is None
+    assert cfg.tuning_duration == 0.0
+    assert cfg.fit_duration == 0.0
+    assert isinstance(cfg.feature_analysis, ModelFeatureImportance)
+    assert len(cfg.feature_analysis.features) == 0
+
+
+def test_model_configuration_ordering_and_none_handling():
+    """Verify __lt__ supports leaderboard sort (higher score = greater rank)."""
+    base_params = RandomForestRegressorParams()
+    high = replace(ModelConfiguration.empty(base_params), score_val=0.9)
+    low = replace(ModelConfiguration.empty(base_params), score_val=0.5)
+    none_score = ModelConfiguration.empty(base_params)  # score_val=None
+
+    # Higher score should NOT be less-than lower score
+    assert not (high < low)
+    assert low < high
+
+    # None is treated as lower than any numeric score
+    assert none_score < low
+    assert none_score < high
+
+    # Two None scores are equal (neither is less-than the other)
+    none_score2 = ModelConfiguration.empty(base_params)
+    assert not (none_score < none_score2)
+
+    # sorted(reverse=True) puts best score first
+    ranked = sorted([low, none_score, high], reverse=True)
+    assert ranked[0].score_val == 0.9
+    assert ranked[-1].score_val is None
+
+
+def test_model_configuration_efficiency_zero_guards():
+    """Verify efficiency() returns 0.0 when duration or row count is zero."""
+
+    class MockSplits:
+        train_features = [None] * 640
+        val_features = [None] * 160
+
+    base_params = RandomForestRegressorParams()
+
+    # Zero duration — should not raise ZeroDivisionError
+    zero_duration = replace(
+        ModelConfiguration.empty(base_params),
+        tuning_duration=0.0,
+        fit_duration=0.0,
+    )
+    assert zero_duration.efficiency(MockSplits()) == 0.0
+
+    # Zero rows — should not raise ZeroDivisionError
+    class EmptySplits:
+        train_features: list = []
+        val_features: list = []
+
+    normal_duration = replace(
+        ModelConfiguration.empty(base_params),
+        tuning_duration=1.0,
+        fit_duration=0.5,
+    )
+    assert normal_duration.efficiency(EmptySplits()) == 0.0
+
+
+def test_auc_roc_curve_returns_score_and_figure(mini_taxi_df):
+    """Verify auc_roc_curve returns a (float, Figure) tuple without side effects."""
+    from matplotlib.figure import Figure
+
+    df = mini_taxi_df.copy()
+    binary_target = "is_long_trip"
+    df[binary_target] = (df["trip_distance"] > 2.0).astype(int)
+
+    splits = DataSplits.from_data_source(
+        src=df,
+        features_to_include=["trip_distance", "fare_amount"],
+        target_column=binary_target,
+        test_size=0.2,
+        valid_size=0.2,
+        original_row_count=len(df),
+        random_state=42,
+        scale_features=True,
+    )
+
+    # Simulate predicted probabilities using the test target itself (perfect classifier)
+    test_proba = splits.test_target.to_numpy().astype(float)
+
+    auc_score, fig = splits.auc_roc_curve(test_proba, plot_title="Test ROC")
+
+    assert isinstance(auc_score, float)
+    assert 0.0 <= auc_score <= 1.0
+    assert isinstance(fig, Figure)
+
+    import matplotlib.pyplot as plt
+
+    plt.close(fig)

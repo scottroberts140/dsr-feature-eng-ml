@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Type
 
 from dsr_utils import format_label_value_pairs
 from sklearn.linear_model import LinearRegression as SklearnLinearRegression
@@ -28,9 +27,9 @@ class LinearRegressionParams(RegressionModelParams):
 
     fit_intercept: bool = True
     copy_X: bool = True
-    n_jobs: Optional[int] = None
+    n_jobs: int | None = None
     positive: bool = False
-    random_state: Optional[int] = None
+    random_state: int | None = None
 
     def info(self) -> str:
         data = [
@@ -55,7 +54,7 @@ class LinearRegression(
 
     def get_estimator_class(
         self,
-    ) -> Type[SklearnLinearRegression]:
+    ) -> type[SklearnLinearRegression]:
         return SklearnLinearRegression
 
     params_class = LinearRegressionParams
@@ -65,7 +64,7 @@ class LinearRegression(
         return self._scoring
 
     @scoring.setter
-    def scoring(self, value: ScoringMetric):
+    def scoring(self, value: ScoringMetric) -> None:
         self._scoring = value
 
     @property
@@ -82,9 +81,9 @@ class LinearRegression(
 
     def __init__(
         self,
-        cv: Optional[int],
+        cv: int | None,
         balancing_strategy: BalancingStrategy,
-        params: Optional[LinearRegressionParams] = None,
+        params: LinearRegressionParams | None = None,
         task_type: TaskType = TaskType.REGRESSION,
         n_jobs: int = 3,
         n_iter: int = -1,
@@ -116,7 +115,7 @@ class LinearRegression(
         self.estimator = self.create_estimator()
 
     def create_estimator(
-        self, parameters: Optional[LinearRegressionParams] = None
+        self, parameters: LinearRegressionParams | None = None
     ) -> SklearnLinearRegression:
         params = parameters or self.model_dials
 

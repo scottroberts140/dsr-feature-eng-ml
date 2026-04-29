@@ -1,12 +1,28 @@
-"""Evaluation schema models and feature metadata structures."""
+"""Core evaluation data models used across training, auditing, and reporting.
+
+This module defines immutable split containers, feature metadata structures,
+model configuration snapshots, and supporting statistics helpers that power
+the model audit pipeline.
+"""
 
 from __future__ import annotations
 
 import dataclasses
 import functools
+import logging
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Generic, Optional, Sequence, Tuple, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeAlias,
+    TypeVar,
+    cast,
+)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,6 +41,7 @@ from dsr_utils.formatting import (
     ValueDescFormat,
     format_label_value_pairs,
 )
+from matplotlib.figure import Figure
 from pandas.api.extensions import ExtensionDtype
 from scipy.stats import kurtosis, skew
 from sklearn.metrics import auc, roc_curve
@@ -50,6 +67,7 @@ if TYPE_CHECKING:
     )
 
 T_Params = TypeVar("T_Params", bound="ModelParams")
+logger = logging.getLogger(__name__)
 
 
 def _f_audit_gap(gap: Optional[float], status: ModelGeneralization) -> str:
@@ -58,6 +76,18 @@ def _f_audit_gap(gap: Optional[float], status: ModelGeneralization) -> str:
         precision=prefs.score_format.precision, description=status.value
     )
     return audit_gap_format.format_value(gap)
+
+
+FloatDtypeFormat: TypeAlias = (
+    CurrencyFormat
+    | PercentageFormat
+    | IntegerFormat
+    | FloatFormat
+    | ValueDescFormat
+    | DateTimeFormat
+    | DataFormat
+)
+"""Union of all formatter types that may be assigned to float-dtype columns."""
 
 
 class DatasetFormatters:
@@ -70,15 +100,7 @@ class DatasetFormatters:
 
     def __init__(
         self,
-        dtype_float: (
-            CurrencyFormat
-            | PercentageFormat
-            | IntegerFormat
-            | FloatFormat
-            | ValueDescFormat
-            | DateTimeFormat
-            | DataFormat
-        ) = FloatFormat(precision=2),
+        dtype_float: FloatDtypeFormat = FloatFormat(precision=2),
         dtype_object: EnumFormat | StringFormat = StringFormat(),
         dtype_int: IntegerFormat | ValueDescFormat = IntegerFormat(),
         dtype_bool: BoolFormat = BoolFormat(),
@@ -98,33 +120,12 @@ class DatasetFormatters:
         self._dtype_category = dtype_category
 
     @property
-    def dtype_float(
-        self,
-    ) -> (
-        CurrencyFormat
-        | PercentageFormat
-        | IntegerFormat
-        | FloatFormat
-        | ValueDescFormat
-        | DateTimeFormat
-        | DataFormat
-    ):
+    def dtype_float(self) -> FloatDtypeFormat:
         """Formatter used for float-like numeric dtypes."""
         return self._dtype_float
 
     @dtype_float.setter
-    def dtype_float(
-        self,
-        val: (
-            CurrencyFormat
-            | PercentageFormat
-            | IntegerFormat
-            | FloatFormat
-            | ValueDescFormat
-            | DateTimeFormat
-            | DataFormat
-        ),
-    ) -> None:
+    def dtype_float(self, val: FloatDtypeFormat) -> None:
         self._dtype_float = val
 
     @property
@@ -381,8 +382,7 @@ class FeatureMetadata:
             # 3. Validate Parent Relationship
             parent = parents.get(col)
             if parent and parent not in all_cols:
-                # Use a logging-style print or actual logger here if available
-                print(f"WARNING: Feature '{col}' has invalid parent '{parent}'.")
+                logger.warning("Feature '%s' has invalid parent '%s'.", col, parent)
                 parent = None
 
             # 4. Create Metadata Instance
@@ -403,8 +403,7 @@ class ModelFeatureImportance:
     """
     Analyzes and manages feature importance from fitted models.
 
-    Calculates feature importance scores, cumulative importance, and identifies
-    optimal feature subsets based on importance thresholds.
+    Calculates and stores feature importance scores with cumulative importance.
 
     Attributes
     ----------
@@ -413,10 +412,6 @@ class ModelFeatureImportance:
     feature_importances : pd.DataFrame
         DataFrame with columns 'feature', 'importance', 'id', and
         'cumulative_importance'.
-    threshold_80_idx : int
-        Index of the first feature reaching 80% cumulative importance.
-    threshold_95_idx : int
-        Index of the first feature reaching 95% cumulative importance.
     """
 
     def __init__(
@@ -448,34 +443,28 @@ class ModelFeatureImportance:
         )
 
         self.features = self.feature_importances["feature"].to_list()
-        self.threshold_80_idx = 0
-        self.threshold_95_idx = 0
+
+    def _get_column_index(self, column_name: str) -> int:
+        """Return the integer index for a required feature importance column."""
+        idx = self.feature_importances.columns.get_indexer_for(pd.Index([column_name]))
+        if idx.size != 1 or idx[0] == -1:
+            raise ValueError(f"Expected exactly one '{column_name}' column.")
+        return int(idx[0])
 
     @property
     def get_feature_column_index(self) -> int:
         """Return the integer index of the 'feature' column."""
-        idx = self.feature_importances.columns.get_indexer_for(pd.Index(["feature"]))
-        if idx.size != 1 or idx[0] == -1:
-            raise ValueError("Expected exactly one 'feature' column.")
-        return int(idx[0])
+        return self._get_column_index("feature")
 
     @property
     def get_importance_column_index(self) -> int:
         """Return the integer index of the 'importance' column."""
-        idx = self.feature_importances.columns.get_indexer_for(pd.Index(["importance"]))
-        if idx.size != 1 or idx[0] == -1:
-            raise ValueError("Expected exactly one 'importance' column.")
-        return int(idx[0])
+        return self._get_column_index("importance")
 
     @property
     def get_cumulative_importance_column_index(self) -> int:
         """Return the integer index of the 'cumulative_importance' column."""
-        idx = self.feature_importances.columns.get_indexer_for(
-            pd.Index(["cumulative_importance"])
-        )
-        if idx.size != 1 or idx[0] == -1:
-            raise ValueError("Expected exactly one 'cumulative_importance' column.")
-        return int(idx[0])
+        return self._get_column_index("cumulative_importance")
 
     @classmethod
     def empty(cls) -> ModelFeatureImportance:
@@ -486,8 +475,6 @@ class ModelFeatureImportance:
         """Convert importance data to a dictionary for serialization."""
         data = {
             "features": self.features,
-            "threshold_80_idx": self.threshold_80_idx,
-            "threshold_95_idx": self.threshold_95_idx,
         }
 
         if include_full_df:
@@ -506,36 +493,6 @@ class ModelFeatureImportance:
                 i + 1, row.feature, row.importance, row.cumulative_importance
             )
         return retval
-
-    def calc_threshold_indices(self) -> None:
-        """
-        Calculate index positions for 80% and 95% cumulative thresholds.
-
-        These indices define the minimum set of features required to explain
-        the majority of the model's predictive power.
-        """
-        self.threshold_80_idx = 0
-        self.threshold_95_idx = 0
-        feature_count = len(self.feature_importances)
-
-        # Scan for threshold cross-over points
-        for n in range(1, feature_count + 1):
-            # Using iat for scalar performance during the loop
-            cumulative = self.feature_importances.iloc[n - 1]["cumulative_importance"]
-
-            if self.threshold_80_idx == 0 and cumulative >= 0.8:
-                self.threshold_80_idx = n
-
-            if self.threshold_95_idx == 0 and cumulative >= 0.95:
-                # Set +1 to include the feature that pushed it over the limit
-                self.threshold_95_idx = n + 1
-                break
-
-        # Safety clamp to ensure indices do not exceed the feature count
-        if self.threshold_95_idx > feature_count or self.threshold_95_idx == 0:
-            self.threshold_95_idx = feature_count
-        if self.threshold_80_idx == 0:
-            self.threshold_80_idx = feature_count
 
 
 @dataclass(frozen=True)
@@ -691,7 +648,7 @@ class DataSplits:
                     train_feat[col] = original_splits["train"][col]
                     val_feat[col] = original_splits["val"][col]
                     test_feat[col] = original_splits["test"][col]
-                print(
+                logger.info(
                     f"INFO: skip_encoding fallback to one-hot for {len(fallback_cols)} "
                     f"column(s) with non-numeric values: {fallback_cols}"
                 )
@@ -700,7 +657,7 @@ class DataSplits:
             if skip_set:
                 present = sorted(skip_set & set(train_feat.columns))
                 if present:
-                    print(
+                    logger.info(
                         f"INFO: One-hot encoding skipped for {len(present)} "
                         f"column(s): {present}"
                     )
@@ -743,7 +700,7 @@ class DataSplits:
             test_num = pd.DataFrame(index=test_feat.index)
 
         if categorical_cols:
-            print(
+            logger.info(
                 f"INFO: One-hot encoding automatically applied to "
                 f"{len(categorical_cols)} categorical column(s): "
                 f"{categorical_cols}"
@@ -804,7 +761,20 @@ class DataSplits:
         -------
         DataSplits
             A new instance containing only the requested features.
+
+        Raises
+        ------
+        ValueError
+            If any requested feature is not present in the source split.
         """
+        available = set(src.train_features.columns)
+        missing = sorted(set(features_to_include) - available)
+        if missing:
+            raise ValueError(
+                "Features not found in source split: "
+                f"{missing}. Available features: {sorted(available)}"
+            )
+
         # We explicitly use pd.DataFrame() wrapper around the slice to ensure
         # Pylance recognizes the return type and avoids SettingWithCopy warnings.
         return cls(
@@ -943,16 +913,33 @@ class DataSplits:
         feat_upsampled = pd.concat([feat_maj, feat_min_up])
         targ_upsampled = pd.concat([targ_maj, targ_min_up])
 
-        # 4. Shuffle to prevent class grouping
-        shuffled_f, shuffled_t = cast(
-            Tuple[pd.DataFrame, pd.Series],
-            shuffle(feat_upsampled, targ_upsampled, random_state=self.random_state),
+        return self._build_rebalanced_splits(
+            balanced_features=feat_upsampled,
+            balanced_target=targ_upsampled,
+            use_combined_data=use_combined_data,
         )
 
-        # 5. Reconstruct objects
-        train_feat_up = pd.DataFrame(shuffled_f, columns=feat_upsampled.columns)
-        train_targ_up = pd.Series(
-            shuffled_t, name=targ_upsampled.name, index=train_feat_up.index
+    def _build_rebalanced_splits(
+        self,
+        balanced_features: pd.DataFrame,
+        balanced_target: pd.Series[Any],
+        use_combined_data: bool,
+    ) -> DataSplits:
+        """Shuffle balanced data and rebuild a new DataSplits instance."""
+        shuffled_f, shuffled_t = cast(
+            Tuple[pd.DataFrame, pd.Series],
+            shuffle(
+                balanced_features,
+                balanced_target,
+                random_state=self.random_state,
+            ),
+        )
+
+        train_features = pd.DataFrame(shuffled_f, columns=balanced_features.columns)
+        train_target = pd.Series(
+            shuffled_t,
+            name=balanced_target.name,
+            index=train_features.index,
         )
 
         return DataSplits(
@@ -960,8 +947,8 @@ class DataSplits:
             target_column=self.target_column,
             test_features=self.test_features,
             test_target=self.test_target,
-            train_features=train_feat_up,
-            train_target=train_targ_up,
+            train_features=train_features,
+            train_target=train_target,
             val_features=pd.DataFrame() if use_combined_data else self.val_features,
             val_target=(
                 pd.Series(dtype="float64") if use_combined_data else self.val_target
@@ -1001,34 +988,10 @@ class DataSplits:
             [targ_min, targ_maj.sample(n=len(targ_min), random_state=self.random_state)]
         )
 
-        # 4. Shuffle and cast
-        from typing import Tuple
-
-        shuffled_f, shuffled_t = cast(
-            Tuple[pd.DataFrame, pd.Series],
-            shuffle(feat_downsampled, targ_downsampled, random_state=self.random_state),
-        )
-
-        # 5. Reconstruct pandas objects
-        train_feat_down = pd.DataFrame(shuffled_f, columns=feat_downsampled.columns)
-        train_targ_down = pd.Series(
-            shuffled_t, name=targ_downsampled.name, index=train_feat_down.index
-        )
-
-        return DataSplits(
-            features_to_include=self.features_to_include,
-            target_column=self.target_column,
-            test_features=self.test_features,
-            test_target=self.test_target,
-            train_features=train_feat_down,
-            train_target=train_targ_down,
-            val_features=pd.DataFrame() if use_combined_data else self.val_features,
-            val_target=(
-                pd.Series(dtype="float64") if use_combined_data else self.val_target
-            ),
-            original_row_count=self.original_row_count,
-            random_state=self.random_state,
-            scaler=self.scaler,
+        return self._build_rebalanced_splits(
+            balanced_features=feat_downsampled,
+            balanced_target=targ_downsampled,
+            use_combined_data=use_combined_data,
         )
 
     def get_balanced_train_data(
@@ -1176,9 +1139,9 @@ class DataSplits:
 
     def auc_roc_curve(
         self, test_proba: np.ndarray, plot_title: str = "ROC Curve"
-    ) -> float:
+    ) -> tuple[float, Figure]:
         """
-        Plot ROC curve and calculate AUC score for binary classification.
+        Build an ROC curve figure and calculate AUC score for binary classification.
 
         Generates a Receiver Operating Characteristic (ROC) curve and calculates
         the Area Under the Curve (AUC) to assess classification performance.
@@ -1192,16 +1155,16 @@ class DataSplits:
 
         Returns
         -------
-        float
-            The calculated AUC score (ranging from 0.0 to 1.0).
+        tuple[float, Figure]
+            The calculated AUC score and the generated Matplotlib figure.
         """
         # Calculate FPR and TPR for various thresholds
         fpr, tpr, thresholds = roc_curve(self.test_target, test_proba)
         auc_score = float(auc(fpr, tpr))
         auc_score_format = FloatFormat(precision=4)
 
-        plt.figure(figsize=(8, 6))
-        plt.plot(
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(
             fpr,
             tpr,
             label=f"Model (AUC = {auc_score_format.format_value(auc_score)})",
@@ -1209,9 +1172,7 @@ class DataSplits:
         )
 
         # Reference line for a random (no-skill) classifier
-        plt.plot(
-            [0, 1], [0, 1], linestyle="--", color="gray", label="Random Classifier"
-        )
+        ax.plot([0, 1], [0, 1], linestyle="--", color="gray", label="Random Classifier")
 
         # Threshold Annotation Logic
         threshold_format = FloatFormat(precision=2)
@@ -1219,8 +1180,8 @@ class DataSplits:
         indices = [0, len(thresholds) // 4, len(thresholds) // 2, len(thresholds) - 1]
 
         for idx, i in enumerate(indices):
-            plt.scatter(fpr[i], tpr[i], color="red", s=50, zorder=5)
-            plt.annotate(
+            ax.scatter(fpr[i], tpr[i], color="red", s=50, zorder=5)
+            ax.annotate(
                 f"{threshold_format.format_value(thresholds[i])}",
                 xy=(fpr[i], tpr[i]),
                 xytext=(10, 10 + idx * 15),
@@ -1231,18 +1192,17 @@ class DataSplits:
             )
 
         # Plot Aesthetics
-        plt.xlim([0.0, 1.0])
-        plt.ylim(
-            [0.0, 1.05]
+        ax.set_xlim(0.0, 1.0)
+        ax.set_ylim(
+            0.0, 1.05
         )  # Slightly higher than 1.0 to ensure the top line isn't cut off
-        plt.xlabel("False Positive Rate (FPR)")
-        plt.ylabel("True Positive Rate (TPR)")
-        plt.title(plot_title)
-        plt.legend(loc="lower right")
-        plt.grid(alpha=0.3)
-        plt.show()
+        ax.set_xlabel("False Positive Rate (FPR)")
+        ax.set_ylabel("True Positive Rate (TPR)")
+        ax.set_title(plot_title)
+        ax.legend(loc="lower right")
+        ax.grid(alpha=0.3)
 
-        return auc_score
+        return auc_score, fig
 
 
 @dataclass
@@ -1555,14 +1515,20 @@ class ModelConfiguration(Generic[T_Params]):
         Returns
         -------
         float
-            Throughput in rows per second. Returns 0.0 if duration is 0.
-        """
-        if self.total_duration > 0.0:
-            # Combine training and validation counts for a full lifecycle view
-            total_rows = len(data_splits.train_features) + len(data_splits.val_features)
-            return total_rows / self.total_duration
+            Throughput in rows per second.
 
-        return 0.0
+            Returns 0.0 when total duration is non-positive, or when the
+            combined train/validation row count is zero.
+        """
+        if self.total_duration <= 0.0:
+            return 0.0
+
+        # Combine training and validation counts for a full lifecycle view
+        total_rows = len(data_splits.train_features) + len(data_splits.val_features)
+        if total_rows <= 0:
+            return 0.0
+
+        return total_rows / self.total_duration
 
     def to_dict(self, include_preds: bool = False) -> dict[str, Any]:
         """
@@ -1740,12 +1706,17 @@ class ModelConfiguration(Generic[T_Params]):
     @classmethod
     def empty(cls, model_params: T_Params) -> ModelConfiguration[T_Params]:
         """
-        Create an empty ModelConfiguration instance for initialization.
+        Create an uninitialized ModelConfiguration instance.
+
+        This factory explicitly assigns every dataclass field so newly added
+        fields cannot be omitted accidentally. Values mirror class defaults
+        where defaults exist; required identity fields are set to sentinel
+        placeholders (e.g., UNKNOWN model/task and id "00").
 
         Returns
         -------
         ModelConfiguration
-            An empty configuration with baseline default values.
+            A fully populated, default-equivalent placeholder configuration.
         """
         return cls(
             id="00",
@@ -1758,18 +1729,69 @@ class ModelConfiguration(Generic[T_Params]):
             scoring=ScoringMetric.R2,
             n_jobs=0,
             n_iter=0,
-            max_iter=0,
+            max_iter=300,
+            has_val_set_evaluation_scores=False,
+            has_test_set_evaluation_scores=False,
+            use_combined_data=False,
             score_cv=None,
             score_train=None,
-            score_val=0.0,
+            score_val=None,
+            score_val_cleaned=None,
+            score_test=None,
             mae_train=None,
             mae_val=None,
+            mae_test=None,
             mse_train=None,
             mse_val=None,
+            mse_test=None,
             r2_train=None,
             r2_val=None,
+            r2_val_cleaned=None,
+            r2_test=None,
+            accuracy_train=None,
+            accuracy_val=None,
+            accuracy_val_cleaned=None,
+            accuracy_test=None,
+            preds_val=None,
+            probs_val=None,
+            preds_test=None,
+            probs_test=None,
             acceptable_gap=prefs.acceptable_gap,
             large_gap=prefs.large_gap,
+            feature_analysis=ModelFeatureImportance.empty(),
+            tuning_duration=0.0,
+            fit_duration=0.0,
+            available_gb=0.0,
+            used_gb=0.0,
+            estimated_peak_gb=0.0,
+            actual_peak_gb=0.0,
+            memory_risk_triggered=False,
+            sampling_factor=0.0,
+            concurrent_workers=0,
+            model_multiplier=1.0,
+            num_candidates=1,
+            filter_outliers=False,
+            outlier_count=prefs.default_worst_errors_n,
+            efficiency_threshold=0,
+            train_mean=0.0,
+            train_std=0.0,
+            train_median=0.0,
+            train_skew=0.0,
+            train_kurtosis=0.0,
+            val_mean=0.0,
+            val_std=0.0,
+            val_median=0.0,
+            val_skew=0.0,
+            val_kurtosis=0.0,
+            test_mean=0.0,
+            test_std=0.0,
+            test_median=0.0,
+            test_skew=0.0,
+            test_kurtosis=0.0,
+            mean_delta=0.0,
+            std_delta=0.0,
+            quality_score=0.0,
+            drift_index=0.0,
         )
 
     def __hash__(self) -> int:
@@ -1791,9 +1813,11 @@ class ModelConfiguration(Generic[T_Params]):
 
     def __lt__(self, other: object) -> bool:
         """
-        Order configurations by validation score (descending leaderboard).
+        Compare configurations by validation score.
 
-        Handles None values by treating them as lower than any numeric score.
+        Intended usage for leaderboards is ``sorted(configs, reverse=True)`` so
+        higher validation scores rank first. ``None`` scores are treated as
+        lower than any numeric score.
         """
         if not isinstance(other, ModelConfiguration):
             return NotImplemented
@@ -1982,7 +2006,7 @@ class ModelAuditorConfig:
         cv : int
             Number of cross-validation folds.
         model_classes : Sequence[type[ModelSpecification]]
-            The list of model types to instantiate (e.g., [RandomForestClassifierModel, LassoRegression]).
+            The list of model types to instantiate (e.g., [RandomForestClassifierModel, LogisticRegression]).
         model_params : dict[type[ModelSpecification], ModelParams], optional
             Per-class hyperparameter overrides. If None, each model uses its defaults.
         balancing_strategies : list[BalancingStrategy], optional

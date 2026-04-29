@@ -9,7 +9,6 @@ from dsr_feature_eng_ml.enums import (
     ModelTypeData,
     ModelTypeDataRecType,
     PlotFileName,
-    TaskTypeSortOrder,
 )
 
 __all__ = [
@@ -18,7 +17,6 @@ __all__ = [
     "PlotFileName",
     "ModelTypeData",
     "ModelEnumSortOrder",
-    "TaskTypeSortOrder",
     "ModelTypeDataRecType",
     "AuditPDFRenderer",
 ]

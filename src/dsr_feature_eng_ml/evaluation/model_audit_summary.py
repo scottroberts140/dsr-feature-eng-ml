@@ -6,7 +6,7 @@ import dataclasses
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -80,7 +80,7 @@ class ModelAuditSummary:
     # Using public attributes for these reduces boilerplate while maintaining V1.2.0 style
 
     @property
-    def random_state(self) -> Optional[int]:
+    def random_state(self) -> int | None:
         """Return random state from splits or global preferences."""
         return self.data_splits.random_state if self.data_splits else prefs.random_state
 
@@ -182,7 +182,7 @@ class ModelAuditSummary:
             target_column=self.data_splits.target_column,
         )
 
-    def resolve_feature(self, col_name: str) -> "FeatureMetadata | None":
+    def resolve_feature(self, col_name: str) -> FeatureMetadata | None:
         """Look up FeatureMetadata by name, falling back to parent for OHE columns.
 
         When one-hot encoding produces columns like ``DOLocationID_71``, this
@@ -745,7 +745,7 @@ class ModelAuditSummary:
         path_is_full_path: bool = False,
         append_timestamp_to_save_path: bool = False,
         report_title: str = "Model Audit Report",
-    ) -> tuple[Path | CloudPath, dict[str, Any]] | Path | CloudPath:
+    ) -> Path | CloudPath:
         """
         Export audit results to CSV, JSON, JOBLIB, Excel, or PDF.
 
@@ -755,7 +755,7 @@ class ModelAuditSummary:
             Filename prefix (e.g., "Audit_State").
         file_type : FileType
             A single FileType or bitmask of types to generate.
-        path : str | Path | CloudPath
+        path : PathLike
             Output directory or full file path.
         path_is_full_path : bool, default False
             If True, treats 'path' as the final destination file.
@@ -766,7 +766,7 @@ class ModelAuditSummary:
 
         Returns
         -------
-        Path
+        Path | CloudPath
             The path to the primary file generated.
         """
         from dsr_files.enums import FileType
@@ -828,19 +828,19 @@ class ModelAuditSummary:
             )
 
             # Main Results (Leaderboard)
-            full_path = save_csv(
+            full_path, _ = save_csv(
                 pd.DataFrame(export_payload["results"]), output_dir, filename
             )
 
         # --- JSON Export Logic ---
         if FileType.JSON in file_type:
-            full_path = save_json(export_payload, output_dir, filename)
+            full_path, _ = save_json(export_payload, output_dir, filename)
 
         # --- JOBLIB Export Logic (Full State) ---
         if FileType.JOBLIB in file_type:
             # Extract large arrays to optimize disk write, then restore
             preds_sidecar = self._extract_preds_and_probs()
-            full_path = save_joblib(self, output_dir, filename)
+            full_path, _ = save_joblib(self, output_dir, filename)
             self._restore_preds_and_probs(preds_sidecar)
 
         # --- EXCEL Export Logic ---
@@ -857,7 +857,7 @@ class ModelAuditSummary:
                     pd.DataFrame(metadata["features"]).T, "Feature Metadata", index=True
                 ),
             ]
-            full_path = save_excel(sheets, output_dir, filename)
+            full_path, _ = save_excel(sheets, output_dir, filename)
 
         # --- PDF Export Logic ---
         if FileType.PDF in file_type:
@@ -877,7 +877,7 @@ class ModelAuditSummary:
         ----------
         index : int
             Index of the model configuration in the results list.
-        joblib_fullpath : str | Path | CloudPath, optional
+        joblib_fullpath : PathLike, optional
             Path to update the .joblib snapshot immediately after evaluation.
         """
         if index >= len(self.results):
@@ -931,7 +931,7 @@ class ModelAuditSummary:
         ----------
         indexes : list[int]
             List of result indices to process.
-        joblib_fullpath : str | Path | CloudPath, optional
+        joblib_fullpath : PathLike, optional
             Path to update the .joblib snapshot after each evaluation.
         """
         for index in indexes:
@@ -943,7 +943,7 @@ class ModelAuditSummary:
 
         Parameters
         ----------
-        joblib_fullpath : str | Path | CloudPath, optional
+        joblib_fullpath : PathLike, optional
             Path to update the .joblib snapshot during the process.
         """
         # Iterate over all indices in the current results list

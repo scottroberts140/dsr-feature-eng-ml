@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Type, TypeVar, cast, get_args
+from typing import Any, Literal, TypeVar, cast, get_args
 
 from dsr_utils import format_label_value_pairs
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -54,12 +54,12 @@ class DecisionTreeParams(ModelParams):
 
     criterion: str = "gini"
     splitter: Literal["best", "random"] = "best"
-    max_depth: Optional[int] | list[Optional[int]] = None
+    max_depth: int | None | list[int | None] = None
     min_samples_split: int | float | list[int | float] = 2
     min_samples_leaf: int | float | list[int | float] = 1
     min_weight_fraction_leaf: float = 0.0
     max_features: int | float | Literal["sqrt", "log2"] | None = None
-    max_leaf_nodes: Optional[int] = None
+    max_leaf_nodes: int | None = None
     min_impurity_decrease: float = 0.0
     class_weight: dict[str, float] | str | None = None
     ccp_alpha: float = 0.0
@@ -143,9 +143,9 @@ class DecisionTreeClassifierModel(
 
     def __init__(
         self,
-        cv: Optional[int],
+        cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[DecisionTreeClassifierParams] = None,
+        params: DecisionTreeClassifierParams | None = None,
         n_jobs: int = 3,
         n_iter: int = -1,
         acceptable_gap: float = prefs.acceptable_gap,
@@ -191,11 +191,11 @@ class DecisionTreeClassifierModel(
     def model_dials(self, value: DecisionTreeClassifierParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[DecisionTreeClassifier]:
+    def get_estimator_class(self) -> type[DecisionTreeClassifier]:
         return DecisionTreeClassifier
 
     def create_estimator(
-        self, parameters: Optional[DecisionTreeClassifierParams] = None
+        self, parameters: DecisionTreeClassifierParams | None = None
     ) -> DecisionTreeClassifier:
         p = parameters or self.model_dials
         crit = p.criterion if p.criterion in get_args(DTCriterion) else "gini"
@@ -231,9 +231,9 @@ class DecisionTreeRegressorModel(
 
     def __init__(
         self,
-        cv: Optional[int],
+        cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[DecisionTreeRegressorParams] = None,
+        params: DecisionTreeRegressorParams | None = None,
         n_jobs: int = 3,
         n_iter: int = -1,
         acceptable_gap: float = prefs.acceptable_gap,
@@ -279,11 +279,11 @@ class DecisionTreeRegressorModel(
     def model_dials(self, value: DecisionTreeRegressorParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[DecisionTreeRegressor]:
+    def get_estimator_class(self) -> type[DecisionTreeRegressor]:
         return DecisionTreeRegressor
 
     def create_estimator(
-        self, parameters: Optional[DecisionTreeRegressorParams] = None
+        self, parameters: DecisionTreeRegressorParams | None = None
     ) -> DecisionTreeRegressor:
         p = parameters or self.model_dials
         crit = p.criterion if p.criterion in get_args(DTRCriterion) else "squared_error"

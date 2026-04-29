@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Type, cast
+from typing import Any, Literal, cast
 
 from dsr_utils import format_label_value_pairs
 from sklearn.linear_model import Ridge as SklearnRidge
@@ -93,7 +93,7 @@ class RidgeRegression(RegressionModelSpecification[RidgeParams, SklearnRidge]):
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[RidgeParams] = None,
+        params: RidgeParams | None = None,
         task_type: TaskType = TaskType.REGRESSION,
         scoring: ScoringMetric = ScoringMetric.R2,
         n_jobs: int = -1,
@@ -144,13 +144,11 @@ class RidgeRegression(RegressionModelSpecification[RidgeParams, SklearnRidge]):
     def model_dials(self, value: RidgeParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[SklearnRidge]:
+    def get_estimator_class(self) -> type[SklearnRidge]:
         """Return the Scikit-Learn Ridge class."""
         return SklearnRidge
 
-    def create_estimator(
-        self, parameters: Optional[RidgeParams] = None
-    ) -> SklearnRidge:
+    def create_estimator(self, parameters: RidgeParams | None = None) -> SklearnRidge:
         """
         Instantiate a raw Scikit-Learn Ridge estimator.
 

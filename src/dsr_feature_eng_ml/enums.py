@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum, StrEnum, auto
-from typing import TYPE_CHECKING, Any, Optional, Type
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from dsr_feature_eng_ml.models import ModelSpecification
-
-import copy
 
 
 class TaskType(StrEnum):
@@ -39,20 +37,10 @@ class TaskType(StrEnum):
         Returns
         -------
         int
-            The sort order value defined in TaskTypeSortOrder.
+            Lower values sort first in reports and UI lists.
         """
-        return TaskTypeSortOrder[self.name].value
-
-
-class TaskTypeSortOrder(Enum):
-    """
-    Priority mapping for sorting TaskTypes in reports and UI lists.
-    """
-
-    REGRESSION = auto()
-    CLASSIFICATION = auto()
-    UNKNOWN = auto()
-    # FUTURE: CLUSTERING = auto()
+        _order = {"REGRESSION": 1, "CLASSIFICATION": 2, "UNKNOWN": 3}
+        return _order.get(self.name, 99)
 
 
 MODEL_METADATA: dict[str, dict[str, Any]] = {
@@ -230,17 +218,15 @@ class ModelType(Enum):
         return MODEL_METADATA.get(self.name, {}).get("task", TaskType.UNKNOWN)
 
     @property
-    def model_class(self) -> Optional[Type["ModelSpecification"]]:
+    def model_class(self) -> type["ModelSpecification"] | None:
         """
         Retrieves the corresponding ModelSpecification class for instantiation.
 
         Returns
         -------
-        Type[ModelSpecification] or None
+        type[ModelSpecification] or None
             The uninitialized class reference for the model wrapper.
         """
-        # (The match statement implementation remains the same,
-        # returning None for unimplemented models)
         from dsr_feature_eng_ml.models.decision_tree import (
             DecisionTreeClassifierModel,
             DecisionTreeRegressorModel,
@@ -350,9 +336,7 @@ class ModelTypeData:
         ModelTypeData
             A copy of the item with the rec_type set to HEADER.
         """
-        header = copy.copy(item)
-        header.rec_type = ModelTypeDataRecType.HEADER
-        return header
+        return replace(item, rec_type=ModelTypeDataRecType.HEADER)
 
     @classmethod
     def get_list(
@@ -402,9 +386,6 @@ class ModelTypeData:
                 mtd_list = sorted(
                     model_list, key=lambda mtd: (mtd.task_type.sort_order, mtd.abbrev)
                 )
-            case _:
-                mtd_list = sorted(model_list, key=lambda mtd: mtd.name)
-
         if include_task_type_headers:
             current_task_type = ""
             final_list: list[ModelTypeData] = []
@@ -529,6 +510,8 @@ class ScoringMetric(Enum):
         list of ScoringMetric
             A list of metrics applicable to the provided task type.
         """
+        if task_type == TaskType.UNKNOWN:
+            return []
         if task_type == TaskType.CLASSIFICATION:
             return [
                 cls.F1,

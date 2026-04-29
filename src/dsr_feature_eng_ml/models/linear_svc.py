@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Type
+from typing import Any, Literal
 
 from dsr_utils import format_label_value_pairs
 from sklearn.svm import LinearSVC as SklearnLinearSVC
@@ -100,7 +100,7 @@ class LinearSVCModel(
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[LinearSVCParams] = None,
+        params: LinearSVCParams | None = None,
         task_type: TaskType = TaskType.CLASSIFICATION,
         scoring: ScoringMetric = ScoringMetric.ACCURACY,
         n_jobs: int = 3,
@@ -155,12 +155,12 @@ class LinearSVCModel(
     def model_dials(self, value: LinearSVCParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[SklearnLinearSVC]:
+    def get_estimator_class(self) -> type[SklearnLinearSVC]:
         """Return the scikit-learn LinearSVC class."""
         return SklearnLinearSVC
 
     def create_estimator(
-        self, parameters: Optional[LinearSVCParams] = None
+        self, parameters: LinearSVCParams | None = None
     ) -> SklearnLinearSVC:
         """
         Instantiate a raw scikit-learn LinearSVC estimator.

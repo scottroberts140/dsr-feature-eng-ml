@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Type
+from typing import Any, Literal
 
 from dsr_utils import format_label_value_pairs
 from sklearn.linear_model import LogisticRegression as SklearnLogisticRegression
@@ -103,7 +103,7 @@ class LogisticRegression(
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[LogisticRegressionParams] = None,
+        params: LogisticRegressionParams | None = None,
         task_type: TaskType = TaskType.CLASSIFICATION,
         scoring: ScoringMetric = ScoringMetric.F1,
         n_jobs: int = 3,
@@ -156,12 +156,12 @@ class LogisticRegression(
     def model_dials(self, value: LogisticRegressionParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[SklearnLogisticRegression]:
+    def get_estimator_class(self) -> type[SklearnLogisticRegression]:
         """Return the Scikit-Learn LogisticRegression class."""
         return SklearnLogisticRegression
 
     def create_estimator(
-        self, parameters: Optional[LogisticRegressionParams] = None
+        self, parameters: LogisticRegressionParams | None = None
     ) -> SklearnLogisticRegression:
         """
         Instantiate a raw Scikit-Learn LogisticRegression estimator.

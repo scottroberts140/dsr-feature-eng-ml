@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Type, cast
+from typing import Any, Literal, cast
 
 from dsr_utils import format_label_value_pairs
 from sklearn.linear_model import ElasticNet as SklearnElasticNet
@@ -98,7 +98,7 @@ class ElasticNetRegression(
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[ElasticNetParams] = None,
+        params: ElasticNetParams | None = None,
         task_type: TaskType = TaskType.REGRESSION,
         scoring: ScoringMetric = ScoringMetric.R2,
         n_jobs: int = 3,
@@ -151,12 +151,12 @@ class ElasticNetRegression(
     def model_dials(self, value: ElasticNetParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[SklearnElasticNet]:
+    def get_estimator_class(self) -> type[SklearnElasticNet]:
         """Return the Scikit-Learn ElasticNet class."""
         return SklearnElasticNet
 
     def create_estimator(
-        self, parameters: Optional[ElasticNetParams] = None
+        self, parameters: ElasticNetParams | None = None
     ) -> SklearnElasticNet:
         """
         Instantiate a raw Scikit-Learn ElasticNet estimator.

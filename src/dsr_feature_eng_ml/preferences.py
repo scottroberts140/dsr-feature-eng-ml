@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import MISSING, asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import matplotlib.pyplot as plt
 from dsr_files.json_handler import load_json, save_json
@@ -64,7 +64,7 @@ class Preferences:
     _initialized = False
 
     # Default values
-    random_state: Optional[int] = 42
+    random_state: int | None = 42
     default_float_type: str = "float32"
     report_width: int = 100
     viable_f1_gap: float = 0.01
@@ -167,7 +167,7 @@ class Preferences:
         is_stable: bool,
         is_efficient: bool,
         is_acceptable: bool,
-    ):
+    ) -> Preferences.ModelRecommendation:
         """Select a recommendation based on accuracy, stability, and efficiency."""
         if is_accurate and is_stable:
             return self.model_recommendation["proceed_to_deployment"]
@@ -226,6 +226,7 @@ class Preferences:
             "review_model_architecture": self.ModelRecommendation.get_review_model_architecture(),
         }
 
+        self._model_colors: dict[str, ModelColor] | None = None
         self._initialized = True
 
     @property
@@ -321,7 +322,7 @@ class Preferences:
     @property
     def model_colors(self) -> dict[str, ModelColor]:
         """Lazy-loaded model color dictionary."""
-        if not hasattr(self, "_model_colors"):
+        if self._model_colors is None:
             self._model_colors = self._build_model_colors()
         return self._model_colors
 
@@ -425,11 +426,15 @@ class Preferences:
 
     def get_penalty_multiplier_for_task_type(self, task_type: TaskType) -> int:
         """Return task-specific data quality penalty."""
+        if task_type == TaskType.UNKNOWN:
+            raise ValueError(
+                "Cannot determine penalty multiplier for TaskType.UNKNOWN."
+            )
         if task_type == TaskType.CLASSIFICATION:
             return self.classification_data_quality_penalty_multiplier
         return self.regression_data_quality_penalty_multiplier
 
-    def apply_style(self):
+    def apply_style(self) -> None:
         """Configure global Matplotlib rcParams for a consistent 'Audit' look."""
         plt.rcParams.update(
             {
@@ -492,7 +497,7 @@ class Preferences:
             }
         )
 
-    def get_hyperparmeter_display_name(self, raw_name: str) -> str:
+    def get_hyperparameter_display_name(self, raw_name: str) -> str:
         """Format hyperparameter keys for reporting."""
         return self.hp_short_names.get(raw_name, raw_name.replace("_", " ").title())
 

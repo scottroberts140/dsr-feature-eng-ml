@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Type
+from typing import Any, Literal
 
 from dsr_utils import format_label_value_pairs
 from sklearn.linear_model import Lasso as SklearnLasso
@@ -19,7 +19,7 @@ from dsr_feature_eng_ml.models.model_specification import (
     RegressionModelParams,
     RegressionModelSpecification,
 )
-from dsr_feature_eng_ml.preferences import prefs
+from dsr_feature_eng_ml.prefs_instance import prefs
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ class LassoParams(RegressionModelParams):
     warm_start: bool = False
     positive: bool = False
     selection: Literal["cyclic", "random"] = "cyclic"
-    random_state: Optional[int] = 1
+    random_state: int | None = 1
 
     def info(self) -> str:
         """Format parameters for diagnostic display."""
@@ -71,9 +71,9 @@ class LassoRegression(RegressionModelSpecification[LassoParams, SklearnLasso]):
 
     def __init__(
         self,
-        cv: Optional[int],
+        cv: int | None,
         balancing_strategy: BalancingStrategy,
-        params: Optional[LassoParams] = None,
+        params: LassoParams | None = None,
         task_type: TaskType = TaskType.REGRESSION,
         scoring: ScoringMetric = ScoringMetric.R2,
         n_jobs: int = -1,
@@ -102,7 +102,7 @@ class LassoRegression(RegressionModelSpecification[LassoParams, SklearnLasso]):
         self.optimization_strategy = optimization_strategy
         self.estimator = self.create_estimator()
 
-    def get_estimator_class(self) -> Type[SklearnLasso]:
+    def get_estimator_class(self) -> type[SklearnLasso]:
         """Return the underlying scikit-learn Lasso class."""
         return SklearnLasso
 
@@ -111,7 +111,7 @@ class LassoRegression(RegressionModelSpecification[LassoParams, SklearnLasso]):
         return self._scoring
 
     @scoring.setter
-    def scoring(self, value: ScoringMetric):
+    def scoring(self, value: ScoringMetric) -> None:
         self._scoring = value
 
     @property
@@ -126,9 +126,7 @@ class LassoRegression(RegressionModelSpecification[LassoParams, SklearnLasso]):
     def model_dials(self, value: LassoParams) -> None:
         self._model_dials = value
 
-    def create_estimator(
-        self, parameters: Optional[LassoParams] = None
-    ) -> SklearnLasso:
+    def create_estimator(self, parameters: LassoParams | None = None) -> SklearnLasso:
         """Hydrate the scikit-learn estimator with Lasso-specific dials."""
         p = parameters or self.model_dials
         return SklearnLasso(

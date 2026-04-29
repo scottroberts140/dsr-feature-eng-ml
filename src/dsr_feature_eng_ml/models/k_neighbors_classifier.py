@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Type
+from typing import Any, Literal
 
 from dsr_utils import format_label_value_pairs
 from sklearn.neighbors import KNeighborsClassifier as SklearnKNeighborsClassifier
@@ -102,7 +102,7 @@ class KNeighborsClassifierModel(
         self,
         cv: int | None,
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
-        params: Optional[KNeighborsClassifierParams] = None,
+        params: KNeighborsClassifierParams | None = None,
         task_type: TaskType = TaskType.CLASSIFICATION,
         scoring: ScoringMetric = ScoringMetric.F1,
         n_jobs: int = 3,
@@ -156,12 +156,12 @@ class KNeighborsClassifierModel(
     def model_dials(self, value: KNeighborsClassifierParams) -> None:
         self._model_dials = value
 
-    def get_estimator_class(self) -> Type[SklearnKNeighborsClassifier]:
+    def get_estimator_class(self) -> type[SklearnKNeighborsClassifier]:
         """Return the scikit-learn KNeighborsClassifier class."""
         return SklearnKNeighborsClassifier
 
     def create_estimator(
-        self, parameters: Optional[KNeighborsClassifierParams] = None
+        self, parameters: KNeighborsClassifierParams | None = None
     ) -> SklearnKNeighborsClassifier:
         """
         Instantiate a raw scikit-learn KNeighborsClassifier estimator.

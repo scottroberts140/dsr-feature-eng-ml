@@ -141,6 +141,14 @@ class AuditPDFRenderer:
     ):
         """
         Initialize the PDF renderer with standard hardware and performance metrics.
+
+        Parameters
+        ----------
+        summary : ModelAuditSummary
+            Completed audit summary containing all model results and data splits.
+        report_title : str, optional
+            Title string printed on the cover page. Defaults to
+            ``"Model Audit Report"``.
         """
         self.summary = summary
         self.report_title = report_title
@@ -883,10 +891,14 @@ class AuditPDFRenderer:
             )
         )
 
-        # Define primary error-tracking columns
-        AUDIT_ANOMALY_ACTUAL_COL = "_audit_Actual"
-        AUDIT_ANOMALY_PREDICTED_COL = "_audit_Predicted"
-        AUDIT_ANOMALY_ABS_ERROR_COL = "_audit_Abs_Error"
+        # Column name and header constants — mirror module-level definitions in
+        # model_audit_summary.py; a local import would create a circular dependency.
+        from .model_audit_summary import (  # noqa: PLC0415
+            AUDIT_ANOMALY_ABS_ERROR_COL,
+            AUDIT_ANOMALY_ACTUAL_COL,
+            AUDIT_ANOMALY_PREDICTED_COL,
+        )
+
         AUDIT_ANOMALY_ACTUAL_COL_HEADER = "Actual"
         AUDIT_ANOMALY_PREDICTED_COL_HEADER = "Predicted"
         AUDIT_ANOMALY_ABS_ERROR_COL_HEADER = "Abs Error"
@@ -1454,7 +1466,7 @@ class AuditPDFRenderer:
             )
             return
 
-        # 1. Coordinate Percetile Clipping
+        # 1. Coordinate Percentile Clipping
         x_min, x_max = self._get_narrow_x_limit(y_train, y_val)
 
         # 2. Render KDE Distributions
@@ -1678,10 +1690,7 @@ class AuditPDFRenderer:
             _render_importance_na_message("No non-zero feature importance values.")
             return
 
-        if imp_total > 0.0:
-            best_model_importance["importance_plot"] = imp_series / imp_total
-        else:
-            best_model_importance["importance_plot"] = imp_series
+        best_model_importance["importance_plot"] = imp_series / imp_total
         best_model_importance["cumulative_importance_plot"] = best_model_importance[
             "importance_plot"
         ].cumsum()
@@ -1984,7 +1993,7 @@ class AuditPDFRenderer:
 
         for k, v in dials.items():
             val = v.value if isinstance(v, Enum) else v
-            table_data.append([prefs.get_hyperparmeter_display_name(k), str(val)])
+            table_data.append([prefs.get_hyperparameter_display_name(k), str(val)])
 
         columns = ["HP", "Value"]
         df = pd.DataFrame(table_data, columns=columns)
@@ -2194,7 +2203,7 @@ class AuditPDFRenderer:
             percentile: float = 0.99,
         ) -> tuple[tuple[float, float], tuple[float, float]]:
             """
-            Compute symmetric Y-axis limits and buffered X-axis limits using percentiles.
+            Compute symmetric Y-axis limits with buffered X-axis limits using percentiles.
             """
             # Symmetric Y-limit ensures the 0-line remains the visual equator
             limit_val = float(np.percentile(np.abs(residuals), percentile * 100))

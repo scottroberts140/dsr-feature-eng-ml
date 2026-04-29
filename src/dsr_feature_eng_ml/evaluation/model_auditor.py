@@ -6,7 +6,7 @@ import dataclasses
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from types import TracebackType
 
 from cloudpathlib import AnyPath
 from dsr_files.utils import PathLike
@@ -32,7 +32,7 @@ class AuditLogger:
 
         Parameters
         ----------
-        file_path : str | Path | CloudPath
+        file_path : PathLike
             The destination path for the audit log file.
         """
         self.terminal = sys.stdout
@@ -63,7 +63,12 @@ class AuditLogger:
         """Enable context manager support."""
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """Ensure the file is closed upon exiting the context."""
         self.close()
 
@@ -170,7 +175,7 @@ class ModelAuditor:
         ----------
         optimize : bool, default True
             Run hyperparameter tuning before the final fit.
-        save_path : str | Path | CloudPath, optional
+        save_path : PathLike, optional
             Base directory for logs and exports.
         append_timestamp_to_save_path : bool, default False
             If True, write artifacts into a timestamped subdirectory under
@@ -261,8 +266,13 @@ class ModelAuditor:
                         )
 
                     # 2. Final Fit and Evaluation
+                    cv_display = (
+                        prefs.score_format.format_value(best_cv)
+                        if best_cv is not None
+                        else "N/A"
+                    )
                     print(
-                        f"Fitting (CV={prefs.score_format.format_value(best_cv)})",
+                        f"Fitting (CV={cv_display})",
                         end=print_end,
                     )
                     f_start = time.perf_counter()
@@ -315,7 +325,7 @@ class ModelAuditor:
 
             except Exception as e:
                 print(f"CRITICAL AUDIT ERROR: {str(e)}")
-                raise e
+                raise
             finally:
                 sys.stdout = original_stdout
 
