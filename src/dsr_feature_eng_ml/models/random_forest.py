@@ -243,6 +243,7 @@ class RandomForestClassifierModel(
             random_state=p.random_state,
             bootstrap=p.bootstrap,
             n_jobs=self.n_jobs,
+            verbose=self.verbose,
         )
 
 
@@ -331,4 +332,5 @@ class RandomForestRegressorModel(
             random_state=p.random_state,
             bootstrap=p.bootstrap,
             n_jobs=self.n_jobs,
+            verbose=self.verbose,
         )

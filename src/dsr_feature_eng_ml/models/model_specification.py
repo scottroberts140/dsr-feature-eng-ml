@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     Generic,
     Mapping,
     Protocol,
@@ -311,6 +312,8 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         Strategy for handling class imbalance (Classification only).
     n_jobs : int
         Number of parallel processes to use during training.
+    verbose : int
+        Estimator verbosity for model types that support a verbose constructor arg.
     n_iter : int
         Number of iterations for randomized search. If -1, calculated automatically.
     max_iter : int
@@ -335,6 +338,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         balancing_strategy: BalancingStrategy = BalancingStrategy.NONE,
         params: T_Params | None = None,
         n_jobs: int = 3,
+        verbose: int | None = None,
         n_iter: int = -1,
         max_iter: int = 1000,
         acceptable_gap: float = prefs.acceptable_gap,
@@ -355,6 +359,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             )
 
         self.n_jobs = n_jobs
+        self.verbose = prefs.fit_verbose if verbose is None else verbose
         self.n_iter = n_iter
         self.max_iter = max_iter
         self.acceptable_gap = acceptable_gap
@@ -365,6 +370,17 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         self.predicted_train = pd.Series(dtype=float)
         self.predicted_val = pd.Series(dtype=float)
         self.estimator: T_Estimator | None = None
+
+    @property
+    def verbose(self) -> int:
+        """Estimator verbosity level for supported model constructors."""
+        return self._verbose
+
+    @verbose.setter
+    def verbose(self, value: int) -> None:
+        if not isinstance(value, int) or value < 0:
+            raise ValueError(f"verbose must be a non-negative integer, got {value!r}")
+        self._verbose = value
 
     @abstractmethod
     def get_estimator_class(self) -> type[T_Estimator]:
@@ -500,6 +516,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         use_combined_data: bool = False,
         max_sample_size: int | None = None,
         perform_memory_check: bool = True,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> tuple[T_Params, float, bool, float, float, float, float]:
         """
         Execute hyperparameter optimization and update model parameters.
@@ -525,6 +542,8 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             rows are used.
         perform_memory_check : bool, default True
             If True, validates memory headroom before starting the search.
+        progress_callback : Callable[[str], None], optional
+            Callback invoked with short stage messages to surface tuning progress.
 
         Returns
         -------
@@ -543,6 +562,26 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         sampling_factor : float
             The percentage of the dataset actually used (e.g., 0.1 for 10%).
         """
+
+        def _emit_progress(message: str) -> None:
+            if progress_callback is not None:
+                progress_callback(message)
+
+        def _log_and_emit_info(
+            message: str, progress_message: str | None = None
+        ) -> None:
+            logger.info(message)
+            _emit_progress(progress_message or message)
+
+        def _log_and_emit_warning(
+            message: str, progress_message: str | None = None
+        ) -> None:
+            logger.warning(message)
+            _emit_progress(progress_message or message)
+
+        if progress_callback is not None:
+            progress_callback("tune: preparing training data")
+
         # 1. Prepare Data
         if use_combined_data:
             features = pd.concat([data_splits.train_features, data_splits.val_features])
@@ -576,19 +615,26 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             max_sample_size = total_rows
 
         if total_rows > max_sample_size:
-            logger.warning(
-                "Dataset (%s rows) exceeds tuning safety limit.", f"{total_rows:,}"
+            _log_and_emit_warning(
+                f"tune: dataset ({total_rows:,} rows) exceeds tuning safety limit.",
+                f"tune: safety limit hit ({total_rows:,} rows)",
             )
             tuning_features, tuning_target, sampling_factor = _apply_sampling(
                 max_sample_size
             )
-            logger.info(
-                "Sampling %s rows (%.1f%%) for optimization.",
-                f"{len(tuning_features):,}",
-                sampling_factor * 100,
+            _log_and_emit_info(
+                "tune: sampling "
+                f"{len(tuning_features):,} rows ({sampling_factor * 100:.1f}%) "
+                "for optimization.",
+                "tune: sampling "
+                f"{len(tuning_features):,} rows ({sampling_factor * 100:.1f}%)",
             )
         else:
             tuning_features, tuning_target = features, target
+
+        _emit_progress(
+            f"tune: ready with {len(tuning_features):,}/{total_rows:,} rows for search"
+        )
 
         # 3. Memory Safety Check
         if perform_memory_check:
@@ -597,13 +643,20 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             memory_risk_triggered, estimated_peak_gb, available_gb, model_multiplier = (
                 check_memory_risk(tuning_features, self, self.n_jobs)
             )
+            _emit_progress(
+                f"tune: memory check complete (risk={memory_risk_triggered})"
+            )
 
         # 4. Emergency Downsampling (OOM Prevention)
         if memory_risk_triggered:
-            logger.warning(
-                "DANGER: Predicted peak %s exceeds safety buffer of available %s.",
-                prefs.gb_format.format_value(estimated_peak_gb),
-                prefs.gb_format.format_value(available_gb),
+            _log_and_emit_warning(
+                "tune: danger: predicted peak "
+                f"{prefs.gb_format.format_value(estimated_peak_gb)} exceeds "
+                "safety buffer of available "
+                f"{prefs.gb_format.format_value(available_gb)}.",
+                "tune: memory risk detected "
+                f"(peak={prefs.gb_format.format_value(estimated_peak_gb)}, "
+                f"available={prefs.gb_format.format_value(available_gb)})",
             )
 
             # Reduce sample size based on the ratio of available vs required memory
@@ -613,10 +666,11 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             tuning_features, tuning_target, sampling_factor = _apply_sampling(
                 safety_limit
             )
-            logger.info(
-                "Emergency downsampling to %s rows (%.1f%%).",
-                f"{len(tuning_features):,}",
-                sampling_factor * 100,
+            _log_and_emit_info(
+                "tune: emergency downsampling to "
+                f"{len(tuning_features):,} rows ({sampling_factor * 100:.1f}%).",
+                "tune: emergency downsampling to "
+                f"{len(tuning_features):,} rows ({sampling_factor * 100:.1f}%)",
             )
 
         # 5. Build Search Space
@@ -684,19 +738,35 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
                 verbose=prefs.cv_verbose,
                 random_state=data_splits.random_state,
             )
+            _emit_progress(
+                "tune: running RANDOM_SEARCH "
+                f"(candidates={self.n_iter}, cv={self.cv}, n_jobs={self.n_jobs})"
+            )
         else:
             scoring_key = self.resolve_search_scoring_key()
+            prepared_grid = _prepare_search_grid(base_estimator, grid)
 
             search_cv = GridSearchCV(
                 estimator=cast(BaseEstimator, base_estimator),
-                param_grid=_prepare_search_grid(base_estimator, grid),
+                param_grid=prepared_grid,
                 cv=self.cv,
                 scoring=scoring_key,
                 n_jobs=self.n_jobs,
                 verbose=prefs.cv_verbose,
             )
+            if progress_callback is not None:
+                grid_size = len(prepared_grid) if prepared_grid else 0
+                _emit_progress(
+                    "tune: running GRID_SEARCH "
+                    f"(params={grid_size}, cv={self.cv}, n_jobs={self.n_jobs})"
+                )
 
         search_cv.fit(tuning_features, tuning_target)
+
+        _emit_progress(
+            "tune: search complete "
+            f"(best={prefs.score_format.format_value(search_cv.best_score_)})"
+        )
 
         # 7. Update State and Return
         self.model_dials = dataclasses.replace(
@@ -766,8 +836,16 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         # (e.g., KNeighborsClassifier), so pass it only when accepted.
         fit_sig = inspect.signature(self.estimator.fit)
         accepts_sample_weight = "sample_weight" in fit_sig.parameters
+        accepts_verbose = "verbose" in fit_sig.parameters
+
+        fit_kwargs: dict[str, Any] = {}
         if accepts_sample_weight and weights is not None:
-            self.estimator.fit(X, y, sample_weight=weights)
+            fit_kwargs["sample_weight"] = weights
+        if accepts_verbose:
+            fit_kwargs["verbose"] = self.verbose
+
+        if fit_kwargs:
+            cast(Any, self.estimator).fit(X, y, **fit_kwargs)
         else:
             self.estimator.fit(X, y)
 
@@ -788,6 +866,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         use_combined_data: bool = False,
         filter_outliers: bool = False,
         outlier_count: int = prefs.default_worst_errors_n,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> ModelConfiguration:
         """
         Execute a full training cycle and generate a validation-scored configuration.
@@ -813,6 +892,9 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             observations with the largest errors.
         outlier_count : int, default prefs.default_worst_errors_n
             The number of high-error observations to exclude if filter_outliers is True.
+        progress_callback : Callable[[str], None], optional
+            Callback invoked with short stage messages to surface progress during
+            the fit and validation-evaluation phases.
 
         Returns
         -------
@@ -820,6 +902,9 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             A populated container holding the fitted estimator parameters,
             performance metrics, and system telemetry (memory/time).
         """
+        if progress_callback is not None:
+            progress_callback("fit: starting estimator training")
+
         # 1. Action: Fit the model and capture memory telemetry
         mem_used, mem_peak = self.fit(
             data_splits=data_splits,
@@ -827,9 +912,12 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             use_combined_data=use_combined_data,
         )
 
+        if progress_callback is not None:
+            progress_callback("fit: training complete; evaluating validation metrics")
+
         # 2. Analysis: Generate metrics and compile the ModelConfiguration
         # Note: self.evaluate_val_performance internally calls calc_predictions()
-        return self.evaluate_val_performance(
+        result = self.evaluate_val_performance(
             data_splits=data_splits,
             id=id,
             features_to_fit_set=features_to_fit_set,
@@ -840,6 +928,11 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             outlier_count=outlier_count,
             use_combined_data=use_combined_data,
         )
+
+        if progress_callback is not None:
+            progress_callback("fit: validation evaluation complete")
+
+        return result
 
     def _score_classification(
         self,

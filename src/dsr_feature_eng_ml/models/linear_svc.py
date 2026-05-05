@@ -183,4 +183,5 @@ class LinearSVCModel(
             tol=p.tol,
             class_weight=p.class_weight,
             random_state=p.random_state,
+            verbose=self.verbose,
         )

@@ -49,17 +49,27 @@ class EncodedXGBClassifier(BaseEstimator, ClassifierMixin):
         """Expose feature importances from the fitted XGBoost model."""
         return self._get_fitted_model().feature_importances_
 
-    def fit(self, X: Any, y: Any, sample_weight: Any = None) -> EncodedXGBClassifier:
+    def fit(
+        self,
+        X: Any,
+        y: Any,
+        sample_weight: Any = None,
+        verbose: int | bool | None = None,
+    ) -> EncodedXGBClassifier:
         """Fit XGBoost after label-encoding target classes."""
         self._label_encoder = LabelEncoder()
         y_encoded = self._label_encoder.fit_transform(y)
         self.classes_ = self._label_encoder.classes_
 
         self._model = SklearnXGBClassifier(**self.xgb_params)
-        if sample_weight is None:
-            self._model.fit(X, y_encoded)
-        else:
-            self._model.fit(X, y_encoded, sample_weight=sample_weight)
+
+        fit_kwargs: dict[str, Any] = {}
+        if sample_weight is not None:
+            fit_kwargs["sample_weight"] = sample_weight
+        if verbose is not None:
+            fit_kwargs["verbose"] = verbose
+
+        self._model.fit(X, y_encoded, **fit_kwargs)
         return self
 
     def predict(self, X: Any) -> Any:

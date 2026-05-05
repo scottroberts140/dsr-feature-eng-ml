@@ -195,4 +195,5 @@ class LogisticRegression(
             max_iter=p.max_iter,
             random_state=p.random_state,
             class_weight=p.class_weight,
+            verbose=self.verbose,
         )

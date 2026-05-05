@@ -14,6 +14,7 @@ from dsr_feature_eng_ml.models.model_specification import (
     ModelParams,
     ModelSpecification,
 )
+from dsr_feature_eng_ml.prefs_instance import prefs
 
 # --- MOCK IMPLEMENTATIONS FOR TESTING ---
 
@@ -91,6 +92,48 @@ class MockModelSpec(ModelSpecification[MockParams, Any]):
         return DummyEstimator()
 
 
+@dataclass(frozen=True)
+class MockFeature:
+    name: str
+
+
+class MockDataSplits:
+    def __init__(self):
+        self.train_features = __import__("pandas").DataFrame(
+            {"x1": [1.0, 2.0, 3.0], "x2": [4.0, 5.0, 6.0]}
+        )
+        self.train_target = __import__("pandas").Series([0.1, 0.2, 0.3])
+
+    def get_balanced_train_data(self, strategy, feature_set, use_combined_data=False):
+        feature_list = [f.name for f in feature_set]
+        return self.train_features[feature_list], self.train_target
+
+    def get_train_weights(self, balancing_strategy, is_regression):
+        return None
+
+
+class VerboseFitModelSpec(MockModelSpec):
+    def create_estimator(self, parameters: Optional[MockParams] = None) -> Any:
+        class VerboseEstimator:
+            def __init__(self):
+                self.fit_kwargs = {}
+
+            def fit(self, X, y, sample_weight=None, verbose=0):
+                self.fit_kwargs = {
+                    "sample_weight": sample_weight,
+                    "verbose": verbose,
+                }
+                return self
+
+            def predict(self, X):
+                return np.zeros(len(X))
+
+            def get_params(self, deep=True):
+                return {"alpha": 1.0}
+
+        return VerboseEstimator()
+
+
 # --- TEST SUITE ---
 
 
@@ -156,3 +199,33 @@ def test_feature_importance_extraction_logic():
     # 2. Perform the equality check
     # Coefficients are returned as absolute values
     np.testing.assert_array_almost_equal(importances, np.array([0.5, 0.8]))
+
+
+def test_fit_forwards_verbose_when_supported(monkeypatch):
+    """fit() should pass fit_verbose when estimator.fit accepts verbose."""
+    old_fit_verbose = prefs.fit_verbose
+    monkeypatch.setattr(prefs, "fit_verbose", 2)
+
+    spec = VerboseFitModelSpec()
+    splits = MockDataSplits()
+    features = {MockFeature("x1"), MockFeature("x2")}
+
+    spec.fit(data_splits=splits, features_to_fit_set=features)
+
+    assert spec.estimator is not None
+    assert spec.estimator.fit_kwargs["verbose"] == 2
+
+    monkeypatch.setattr(prefs, "fit_verbose", old_fit_verbose)
+
+
+def test_fit_skips_verbose_when_not_supported():
+    """fit() should not pass verbose when estimator.fit lacks that parameter."""
+    spec = MockModelSpec()
+    splits = MockDataSplits()
+    features = {MockFeature("x1"), MockFeature("x2")}
+
+    # Should complete without raising TypeError from an unexpected verbose kwarg
+    mem_used, mem_peak = spec.fit(data_splits=splits, features_to_fit_set=features)
+
+    assert mem_used >= 0
+    assert mem_peak >= 0

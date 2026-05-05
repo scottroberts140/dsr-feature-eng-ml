@@ -206,6 +206,7 @@ class Preferences:
 
         self.n_jobs = -1
         self.cv_verbose = 0
+        self.fit_verbose = 0
         self._currency_format = CurrencyFormat()
         self._score_format = FloatFormat(precision=4)
         self._gb_format = DataFormat(data_scale=DataScale.GB)
@@ -237,6 +238,19 @@ class Preferences:
     @cv_verbose.setter
     def cv_verbose(self, value: int):
         self._cv_verbose = max(0, min(3, value))
+
+    @property
+    def fit_verbose(self) -> int:
+        """Verbosity level for estimator fit calls (non-negative integer)."""
+        return self._fit_verbose
+
+    @fit_verbose.setter
+    def fit_verbose(self, value: int):
+        if not isinstance(value, int) or value < 0:
+            raise ValueError(
+                f"fit_verbose must be a non-negative integer, got {value!r}"
+            )
+        self._fit_verbose = value
 
     @property
     def n_jobs(self) -> int:
