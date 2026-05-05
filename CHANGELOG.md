@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-05-05
+
+### Added
+
+* **Classification ROC-AUC Metrics**: Added native ROC-AUC computation in classification scoring flows, including binary (`probs[:, 1]`) and multiclass (`ovr`, `weighted`) support.
+* **Model Configuration ROC-AUC Fields**: Extended `ModelConfiguration` with `roc_auc_train`, `roc_auc_val`, `roc_auc_val_cleaned`, and `roc_auc_test` fields, with serialization support.
+* **ROC-AUC Test Suite**: Added a dedicated test module for ROC-AUC behavior covering direct computation, schema field presence, multiclass variants, and edge cases.
+
+### Changed
+
+* **Validation/Test Metric Wiring**: Updated classification validation and test metric assembly to propagate computed ROC-AUC values through output metric dictionaries.
+* **Test Module Cleanup**: Refined ROC-AUC test formatting and imports after initial suite addition.
+
 ## [1.2.4] - 2026-05-05
 
 ### Added
