@@ -1195,6 +1195,9 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             accuracy_train=metrics["accuracy_train"],
             accuracy_val=metrics["accuracy_val"],
             accuracy_val_cleaned=metrics["accuracy_val_cleaned"],
+            roc_auc_train=metrics.get("roc_auc_train"),
+            roc_auc_val=metrics.get("roc_auc_val"),
+            roc_auc_val_cleaned=metrics.get("roc_auc_val_cleaned"),
             preds_val=metrics["preds_val"],
             probs_val=metrics["probs_val"],
             acceptable_gap=self.acceptable_gap,
@@ -1293,6 +1296,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             mse_test=test_metrics["mse_test"],
             r2_test=test_metrics["r2_test"],
             accuracy_test=test_metrics["accuracy_test"],
+            roc_auc_test=test_metrics.get("roc_auc_test"),
             preds_test=test_metrics["preds_test"],
             probs_test=test_metrics["probs_test"],
         )
@@ -1650,6 +1654,9 @@ class ClassificationModelSpecification(ModelSpecification[T_Params, T_Estimator]
             "accuracy_train": acc_train,
             "accuracy_val": acc_val,
             "accuracy_val_cleaned": acc_val_cleaned,
+            "roc_auc_train": None,
+            "roc_auc_val": None,
+            "roc_auc_val_cleaned": None,
             "preds_val": preds_val,
             "probs_val": probs_val,
         }
@@ -1673,6 +1680,7 @@ class ClassificationModelSpecification(ModelSpecification[T_Params, T_Estimator]
             "mse_test": None,
             "r2_test": None,
             "accuracy_test": acc_test,
+            "roc_auc_test": None,
             "preds_test": preds_test,
             "probs_test": probs_test,
         }

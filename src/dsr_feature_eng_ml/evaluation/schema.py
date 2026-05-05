@@ -1461,6 +1461,10 @@ class ModelConfiguration(Generic[T_Params]):
     accuracy_val: float | None = None
     accuracy_val_cleaned: float | None = None
     accuracy_test: float | None = None
+    roc_auc_train: float | None = None
+    roc_auc_val: float | None = None
+    roc_auc_val_cleaned: float | None = None
+    roc_auc_test: float | None = None
 
     # Prediction storage
     preds_val: pd.Series | None = None
@@ -1673,6 +1677,10 @@ class ModelConfiguration(Generic[T_Params]):
             "accuracy_val": self.accuracy_val,
             "accuracy_val_cleaned": self.accuracy_val_cleaned,
             "accuracy_test": self.accuracy_test,
+            "roc_auc_train": self.roc_auc_train,
+            "roc_auc_val": self.roc_auc_val,
+            "roc_auc_val_cleaned": self.roc_auc_val_cleaned,
+            "roc_auc_test": self.roc_auc_test,
             "acceptable_gap": self.acceptable_gap,
             "large_gap": self.large_gap,
             # Telemetry and auditing
@@ -1845,6 +1853,10 @@ class ModelConfiguration(Generic[T_Params]):
             accuracy_val=None,
             accuracy_val_cleaned=None,
             accuracy_test=None,
+            roc_auc_train=None,
+            roc_auc_val=None,
+            roc_auc_val_cleaned=None,
+            roc_auc_test=None,
             preds_val=None,
             probs_val=None,
             preds_test=None,
