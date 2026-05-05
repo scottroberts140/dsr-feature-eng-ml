@@ -940,13 +940,13 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         targets: pd.Series[Any],
         filter_outliers: bool,
         outlier_count: int,
-    ) -> tuple[float, float | None, pd.Series, pd.DataFrame | None]:
+    ) -> tuple[float, float | None, float | None, float | None, pd.Series, pd.DataFrame | None]:
         """
-        Compute weighted F1 scores and extract class probabilities.
+        Compute weighted F1 scores, ROC-AUC, and extract class probabilities.
 
-        This internal method handles the logic for calculating baseline performance
-        and the "cleaned" performance metric, which excludes the most confident
-        incorrect predictions (outliers).
+        This internal method handles the logic for calculating baseline performance,
+        the "cleaned" performance metric (excluding high-confidence errors), and
+        ROC-AUC scores for probabilistic classifiers.
 
         Parameters
         ----------
@@ -955,9 +955,9 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         targets : pd.Series
             The ground-truth class labels.
         filter_outliers : bool
-            If True, calculates an additional 'cleaned' F1 score.
+            If True, calculates an additional 'cleaned' F1 and ROC-AUC score.
         outlier_count : int
-            The number of high-confidence errors to exclude from the cleaned score.
+            The number of high-confidence errors to exclude from the cleaned scores.
 
         Returns
         -------
@@ -965,6 +965,10 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             The standard weighted F1 score.
         f1_cleaned : float, optional
             The weighted F1 score after removing outliers. None if filter_outliers is False.
+        roc_auc : float, optional
+            The ROC-AUC score (binary) or weighted multiclass ROC-AUC. None if probabilities unavailable.
+        roc_auc_cleaned : float, optional
+            The ROC-AUC after removing outliers. None if probabilities or filter_outliers is False.
         preds : pd.Series
             Discrete class predictions indexed to the input features.
         probs : pd.DataFrame, optional
@@ -988,12 +992,24 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         preds = pd.Series(raw_preds, index=targets.index, name="predictions")
 
         # 4. Standard Metric Calculation
-        from sklearn.metrics import f1_score
+        from sklearn.metrics import f1_score, roc_auc_score
 
         f1 = float(f1_score(targets, preds, average="weighted"))
 
-        # 5. Outlier Filtering (Confident Mistakes)
+        # 5. ROC-AUC Calculation (when probabilities available)
+        roc_auc: float | None = None
+        if raw_probs is not None:
+            # For binary classification, use probability of positive class (column 1)
+            # For multiclass, use weighted OvR approach
+            n_classes = raw_probs.shape[1]
+            if n_classes == 2:
+                roc_auc = float(roc_auc_score(targets, raw_probs[:, 1]))
+            else:
+                roc_auc = float(roc_auc_score(targets, raw_probs, multi_class="ovr", average="weighted"))
+
+        # 6. Outlier Filtering (Confident Mistakes)
         f1_cleaned: float | None = None
+        roc_auc_cleaned: float | None = None
 
         if filter_outliers and raw_probs is not None:
             # Mask where prediction is wrong
@@ -1022,8 +1038,15 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
                     average="weighted",
                 )
             )
+            
+            # Calculate cleaned ROC-AUC on filtered subset
+            n_classes = raw_probs.shape[1]
+            if n_classes == 2:
+                roc_auc_cleaned = float(roc_auc_score(targets.iloc[keep_indices], raw_probs[keep_indices, 1]))
+            else:
+                roc_auc_cleaned = float(roc_auc_score(targets.iloc[keep_indices], raw_probs[keep_indices], multi_class="ovr", average="weighted"))
 
-        return f1, f1_cleaned, preds, probs
+        return f1, f1_cleaned, roc_auc, roc_auc_cleaned, preds, probs
 
     def _score_regression(
         self,
@@ -1628,13 +1651,13 @@ class ClassificationModelSpecification(ModelSpecification[T_Params, T_Estimator]
         filter_outliers: bool,
         outlier_count: int,
     ) -> dict[str, Any]:
-        acc_train, _, _, _ = self._score_classification(
+        acc_train, _, roc_auc_train, _, _, _ = self._score_classification(
             features=train_features,
             targets=train_target,
             filter_outliers=filter_outliers,
             outlier_count=outlier_count,
         )
-        acc_val, acc_val_cleaned, preds_val, probs_val = self._score_classification(
+        acc_val, acc_val_cleaned, roc_auc_val, roc_auc_val_cleaned, preds_val, probs_val = self._score_classification(
             features=eval_features,
             targets=eval_target,
             filter_outliers=filter_outliers,
@@ -1654,9 +1677,9 @@ class ClassificationModelSpecification(ModelSpecification[T_Params, T_Estimator]
             "accuracy_train": acc_train,
             "accuracy_val": acc_val,
             "accuracy_val_cleaned": acc_val_cleaned,
-            "roc_auc_train": None,
-            "roc_auc_val": None,
-            "roc_auc_val_cleaned": None,
+            "roc_auc_train": roc_auc_train,
+            "roc_auc_val": roc_auc_val,
+            "roc_auc_val_cleaned": roc_auc_val_cleaned,
             "preds_val": preds_val,
             "probs_val": probs_val,
         }
@@ -1668,7 +1691,7 @@ class ClassificationModelSpecification(ModelSpecification[T_Params, T_Estimator]
         filter_outliers: bool,
         outlier_count: int,
     ) -> dict[str, Any]:
-        acc_test, _, preds_test, probs_test = self._score_classification(
+        acc_test, _, roc_auc_test, _, preds_test, probs_test = self._score_classification(
             features=eval_features,
             targets=eval_target,
             filter_outliers=filter_outliers,
@@ -1680,7 +1703,7 @@ class ClassificationModelSpecification(ModelSpecification[T_Params, T_Estimator]
             "mse_test": None,
             "r2_test": None,
             "accuracy_test": acc_test,
-            "roc_auc_test": None,
+            "roc_auc_test": roc_auc_test,
             "preds_test": preds_test,
             "probs_test": probs_test,
         }
