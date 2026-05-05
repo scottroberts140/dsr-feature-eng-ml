@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import sys
 import time
 from pathlib import Path
@@ -20,13 +21,32 @@ from dsr_feature_eng_ml.prefs_instance import prefs
 
 class AuditLogger:
     """
-    Standard output 'Tee' that mirrors terminal output to a log file.
+    Standard output 'Tee' that mirrors terminal output to a log file, and also
+    installs a :class:`logging.FileHandler` so that Python ``logging`` calls at
+    or above ``log_level`` are captured in the same file.
 
-    This class captures all print statements and redirects them to both the
-    console and a specified file, providing a persistent record of the audit.
+    On entry:
+
+    - Opens the log file (truncating any previous content).
+    - Redirects ``sys.stdout`` writes to both the terminal and the log file.
+    - Adds a ``logging.FileHandler`` to the root logger so that
+      ``logging.info()``, ``logging.warning()``, etc. are written to the file.
+
+    On exit (or ``close()``):
+
+    - Removes the ``FileHandler`` from the root logger and closes it.
+    - Closes the tee file handle.
+
+    The caller is responsible for restoring ``sys.stdout`` (typically via a
+    ``try/finally`` around ``sys.stdout = logger``).
     """
 
-    def __init__(self, file_path: PathLike):
+    _LOG_FORMATTER = logging.Formatter(
+        "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    def __init__(self, file_path: PathLike, log_level: int | str = logging.INFO):
         """
         Initialize the logger and open the target log file.
 
@@ -34,10 +54,43 @@ class AuditLogger:
         ----------
         file_path : PathLike
             The destination path for the audit log file.
+        log_level : int | str, default ``logging.INFO``
+            Minimum Python logging level written to the log file. Accepts
+            integer constants (e.g. ``logging.DEBUG``) or level-name strings
+            (e.g. ``"INFO"``, ``"WARNING"``).
         """
+        # Resolve the numeric level first so validation happens before any I/O.
+        if isinstance(log_level, str):
+            numeric_level = logging.getLevelName(log_level.upper())
+            if not isinstance(numeric_level, int):
+                raise ValueError(
+                    f"Invalid log_level: {log_level!r}. "
+                    "Use a standard Python logging level name such as "
+                    "'DEBUG', 'INFO', 'WARNING', 'ERROR', or 'CRITICAL'."
+                )
+        else:
+            numeric_level = log_level
+
         self.terminal = sys.stdout
-        # We use 'w' to overwrite previous audits; change to 'a' if appending is preferred.
+
+        # Open file in "w" mode to start a fresh log for this audit session.
         self.log = AnyPath(file_path).open("w", encoding="utf-8")
+
+        # Install a FileHandler on the root logger so that logging.* calls are
+        # also captured. Use "a" so it appends after the tee already created
+        # (and truncated) the file above.
+        self._log_handler = logging.FileHandler(
+            str(Path(str(file_path)).resolve()), mode="a", encoding="utf-8"
+        )
+        self._log_handler.setLevel(numeric_level)
+        self._log_handler.setFormatter(self._LOG_FORMATTER)
+
+        root = logging.getLogger()
+        self._original_root_level = root.level
+        # Ensure the root logger doesn't silently drop records below our level.
+        if root.level == logging.NOTSET or root.level > numeric_level:
+            root.setLevel(numeric_level)
+        root.addHandler(self._log_handler)
 
     def write(self, message: str) -> None:
         """Write a message to both the terminal and the log file."""
@@ -52,10 +105,15 @@ class AuditLogger:
         internal buffer limits.
         """
         self.terminal.flush()
-        self.log.flush()
+        if not self.log.closed:
+            self.log.flush()
 
     def close(self) -> None:
-        """Close the log file and release resources."""
+        """Remove the logging handler, close the log file, and release resources."""
+        root = logging.getLogger()
+        root.removeHandler(self._log_handler)
+        self._log_handler.close()
+        root.setLevel(self._original_root_level)
         if not self.log.closed:
             self.log.close()
 
@@ -93,6 +151,9 @@ class ModelAuditor:
             data_splits=config.data_splits,
             dataset_name=config.dataset_name,
             top_n_importance=config.top_n_importance,
+            pdf_feature_importance_chart_limit=config.pdf_feature_importance_chart_limit,
+            anomaly_table_max_columns=config.anomaly_table_max_columns,
+            anomaly_table_show_notes=config.anomaly_table_show_notes,
             original_row_count=config.data_splits.original_row_count,
             features=config.features,
             top_n_anomalies=config.top_n_anomalies,
@@ -167,6 +228,7 @@ class ModelAuditor:
         filter_outliers: bool = False,
         outlier_count: int = prefs.default_worst_errors_n,
         efficiency_threshold: int = prefs.default_efficiency_threshold,
+        audit_log_level: str = "INFO",
     ) -> None:
         """
         Execute the audit for all configured models.
@@ -194,6 +256,11 @@ class ModelAuditor:
         efficiency_threshold : int, default prefs.default_efficiency_threshold
             Minimum throughput threshold, in rows per second, used when storing
             evaluation metadata and downstream recommendation signals.
+        audit_log_level : str, default ``"INFO"``
+            Minimum Python logging level written to the audit log file. Stdout
+            (print) output is always tee'd to both terminal and file regardless
+            of this setting. Accepts standard level names such as ``"DEBUG"``,
+            ``"INFO"``, ``"WARNING"``, ``"ERROR"``, or ``"CRITICAL"``.
         """
         base_dir = AnyPath(save_path) if save_path else Path.cwd()
 
@@ -208,7 +275,7 @@ class ModelAuditor:
         original_stdout = sys.stdout
 
         # Use context manager to ensure logger closure
-        with AuditLogger(log_path) as logger:
+        with AuditLogger(log_path, log_level=audit_log_level) as logger:
             sys.stdout = logger
             try:
                 start_perf = time.perf_counter()
@@ -219,22 +286,33 @@ class ModelAuditor:
                 type_fmt = EnumFormat(use_value=False)
                 bal_fmt = EnumFormat.from_format(type_fmt)
                 id_fmt = IntegerFormat(width=2, pad_value="0")
+                total_models = len(self.config.models_to_run)
 
                 for i, model in enumerate(self.config.models_to_run, 1):
+                    pending_tune_complete: str | None = None
+
+                    def emit_stage_progress(message: str) -> None:
+                        nonlocal pending_tune_complete
+                        if message.startswith("tune: search complete"):
+                            pending_tune_complete = message
+                            return
+
+                        print(f"  {message}", flush=True)
+
                     print(
                         f"Auditing {type_fmt.format_value(model.model_type)} "
                         f"[{bal_fmt.format_value(model.balancing_strategy)}]... ",
                         end="",
+                        flush=True,
                     )
 
                     global_id = id_fmt.format_value(i)
                     tuning_dur = 0.0
                     best_cv: float | None = None
-                    print_end = "\n" if prefs.cv_verbose > 0 else ""
 
                     # 1. Tuning Phase
                     if optimize:
-                        print("Tuning", end=print_end)
+                        print("Tuning", flush=True)
                         t_start = time.perf_counter()
                         (
                             _,
@@ -252,10 +330,18 @@ class ModelAuditor:
                             use_combined_data=True,
                             max_sample_size=max_sample_size,
                             perform_memory_check=perform_memory_check,
+                            progress_callback=emit_stage_progress,
                         )
                         tuning_dur = time.perf_counter() - t_start
                         if prefs.cv_verbose == 0:
-                            print(f" ({dur_fmt.format_value(tuning_dur)}) ", end="")
+                            if pending_tune_complete is not None:
+                                print(
+                                    "  "
+                                    f"{pending_tune_complete} "
+                                    f"({dur_fmt.format_value(tuning_dur)})",
+                                    flush=True,
+                                )
+                                pending_tune_complete = None
                     else:
                         mem_risk, avail_gb, est_peak, mult, samp_factor = (
                             False,
@@ -271,10 +357,7 @@ class ModelAuditor:
                         if best_cv is not None
                         else "N/A"
                     )
-                    print(
-                        f"Fitting (CV={cv_display})",
-                        end=print_end,
-                    )
+                    print(f"Fitting (CV={cv_display})", flush=True)
                     f_start = time.perf_counter()
                     result = model.fit_and_evaluate_val(
                         data_splits=self.summary.data_splits,
@@ -284,6 +367,7 @@ class ModelAuditor:
                         use_combined_data=False,
                         filter_outliers=filter_outliers,
                         outlier_count=outlier_count,
+                        progress_callback=emit_stage_progress,
                     )
                     fit_dur = time.perf_counter() - f_start
 
@@ -303,14 +387,26 @@ class ModelAuditor:
 
                     if prefs.cv_verbose == 0:
                         total_m_dur = tuning_dur + fit_dur
-                        print(f"Done ({dur_fmt.format_value(total_m_dur)})")
+                        print(
+                            f"  Done ({dur_fmt.format_value(total_m_dur)})",
+                            flush=True,
+                        )
 
                     self.summary.add_model_configuration(result)
+                    print(
+                        "Progress: "
+                        f"{i}/{total_models} models recorded "
+                        f"(memory_risk={result.memory_risk_triggered}, "
+                        f"workers={result.concurrent_workers})"
+                    )
 
                 # Finalize summary
+                print("Finalizing audit metadata...")
                 self.summary.duration = time.perf_counter() - start_perf
                 self._report_phase_completion(step_desc)
+                print("Capturing anomaly context...")
                 self.summary.capture_anomaly_context()
+                print("Writing audit snapshot (.joblib)...")
 
                 # Export snapshot
                 from dsr_files.enums import FileType

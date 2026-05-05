@@ -461,6 +461,62 @@ def test_n_jobs_propagation():
     assert m2.n_jobs == 5
 
 
+def test_config_apply_overrides_updates_supported_fields():
+    """Verify post-construction overrides apply and n_jobs propagation is preserved."""
+    m1 = RandomForestRegressorModel(cv=5)
+    config = ModelAuditorConfig(
+        data_splits=DataSplits.empty(),
+        dataset_name="Override Test",
+        models_to_run=[m1],
+    )
+
+    applied = config.apply_overrides(
+        {
+            "top_n_importance": 7,
+            "pdf_feature_importance_chart_limit": 8,
+            "anomaly_table_show_notes": False,
+            "top_n_anomalies": 9,
+            "n_jobs": 2,
+        }
+    )
+
+    assert applied == [
+        "top_n_importance",
+        "pdf_feature_importance_chart_limit",
+        "anomaly_table_show_notes",
+        "top_n_anomalies",
+        "n_jobs",
+    ]
+    assert config.top_n_importance == 7
+    assert config.pdf_feature_importance_chart_limit == 8
+    assert config.anomaly_table_show_notes is False
+    assert config.top_n_anomalies == 9
+    assert config.n_jobs == 2
+    assert m1.n_jobs == 2
+
+
+def test_config_apply_overrides_rejects_protected_data_splits():
+    """data_splits can only be created through from_dataset/data split factories."""
+    config = ModelAuditorConfig(
+        data_splits=DataSplits.empty(),
+        dataset_name="Protected Test",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported ModelAuditorConfig override"):
+        config.apply_overrides({"data_splits": DataSplits.empty()})
+
+
+def test_config_data_splits_is_read_only_after_init():
+    """Prevent direct reassignment of split state post construction."""
+    config = ModelAuditorConfig(
+        data_splits=DataSplits.empty(),
+        dataset_name="Read Only Test",
+    )
+
+    with pytest.raises(AttributeError, match="read-only after initialization"):
+        config.data_splits = DataSplits.empty()
+
+
 def test_risk_threshold_loading():
     """Ensure preferences are correctly loaded into the config defaults."""
     # This verifies the link to prefs.anomaly_threshold and others
@@ -502,6 +558,95 @@ def test_data_splits_skip_encoding_falls_back_for_non_numeric_columns(caplog):
     assert not splits.train_features["num"].isna().all()
 
 
+def test_data_splits_numeric_categorical_ohe_suffix_normalization():
+    """Numeric categorical OHE columns should map -1 to Other and pad integers."""
+    df = pd.DataFrame(
+        {
+            "loc": [
+                "33",
+                "264",
+                "-1",
+                "33",
+                "264",
+                "33",
+                "-1",
+                "264",
+                "33",
+                "264",
+                "33",
+                "-1",
+            ],
+            "target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        }
+    )
+
+    splits = DataSplits.from_data_source(
+        src=df,
+        features_to_include=["loc"],
+        target_column="target",
+        test_size=0.2,
+        valid_size=0.25,
+        original_row_count=len(df),
+        random_state=42,
+        scale_features=False,
+    )
+
+    loc_cols = sorted(c for c in splits.train_features.columns if c.startswith("loc_"))
+    assert "loc_Other" in loc_cols
+    assert "loc_-1" not in loc_cols
+    assert "loc_033" in loc_cols
+    assert "loc_264" in loc_cols
+
+
+def test_data_splits_numeric_categorical_ohe_suffix_width_override():
+    """Explicit suffix width should control zero-padding for numeric categories."""
+    df = pd.DataFrame(
+        {
+            "loc": ["33", "264", "-1", "33", "264", "-1", "33", "264", "33", "264"],
+            "target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        }
+    )
+
+    splits = DataSplits.from_data_source(
+        src=df,
+        features_to_include=["loc"],
+        target_column="target",
+        test_size=0.2,
+        valid_size=0.25,
+        original_row_count=len(df),
+        random_state=42,
+        scale_features=False,
+        numeric_ohe_suffix_width=4,
+    )
+
+    assert "loc_0033" in splits.train_features.columns
+    assert "loc_0264" in splits.train_features.columns
+    assert "loc_Other" in splits.train_features.columns
+
+
+def test_data_splits_numeric_categorical_ohe_suffix_width_validation():
+    """Reject non-positive custom suffix widths to prevent invalid formatting."""
+    df = pd.DataFrame(
+        {
+            "loc": ["33", "264", "-1", "33", "264", "-1"],
+            "target": [0, 1, 0, 1, 0, 1],
+        }
+    )
+
+    with pytest.raises(ValueError, match="numeric_ohe_suffix_width must be >= 1"):
+        DataSplits.from_data_source(
+            src=df,
+            features_to_include=["loc"],
+            target_column="target",
+            test_size=0.2,
+            valid_size=0.25,
+            original_row_count=len(df),
+            random_state=42,
+            scale_features=False,
+            numeric_ohe_suffix_width=0,
+        )
+
+
 def test_model_configuration_empty_sentinel_values():
     """Verify that empty() populates all identity fields with correct sentinels."""
     cfg = ModelConfiguration.empty(model_params=RandomForestRegressorParams())
@@ -519,6 +664,34 @@ def test_model_configuration_empty_sentinel_values():
     assert cfg.fit_duration == 0.0
     assert isinstance(cfg.feature_analysis, ModelFeatureImportance)
     assert len(cfg.feature_analysis.features) == 0
+
+
+def test_model_configuration_accepts_plain_dict_model_params():
+    """Dict-backed params should serialize cleanly for export and reporting."""
+    cfg = ModelConfiguration(
+        id="03",
+        model_type=ModelType.RANDOM_FOREST_REGRESSOR,
+        task_type=TaskType.REGRESSION,
+        balancing_strategy=BalancingStrategy.NONE,
+        optimization_strategy=OptimizationStrategy.RANDOM_SEARCH,
+        model_params={
+            "max_depth": 8,
+            "optimization_strategy": OptimizationStrategy.RANDOM_SEARCH,
+            "drop_me": None,
+        },
+        cv=5,
+        scoring=ScoringMetric.R2,
+        n_jobs=1,
+        n_iter=10,
+    )
+
+    assert cfg.params_dict == {
+        "max_depth": 8,
+        "optimization_strategy": "RANDOM_SEARCH",
+    }
+    assert cfg.to_dict()["model_params"] == cfg.params_dict
+    assert "max_depth=8" in cfg.params_info
+    assert "optimization_strategy=RANDOM_SEARCH" in cfg.info()
 
 
 def test_model_configuration_ordering_and_none_handling():

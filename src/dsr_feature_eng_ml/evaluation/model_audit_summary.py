@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import dataclasses
+import inspect
+import logging
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Mapping
 
 import numpy as np
 import pandas as pd
@@ -18,13 +21,23 @@ from dsr_files.json_handler import save_json
 from dsr_files.utils import PathLike
 from dsr_utils.enums import StringCase
 from dsr_utils.formatting import (
+    BoolFormat,
+    BoolRepresentation,
+    CurrencyFormat,
+    CurrencySymbolPosition,
     DataFormat,
     DataScale,
     DateTimeFormat,
+    EnumFormat,
     FloatFormat,
     FormatConfig,
+    FormatType,
     IntegerFormat,
+    NumericScale,
+    PercentageFormat,
     StringFormat,
+    TextAlignment,
+    ValueDescFormat,
     format_as_grid,
     format_label_value_pairs,
 )
@@ -52,6 +65,100 @@ AUDIT_ANOMALY_ABS_ERROR_COL = "_audit_Abs_Error"
 AUDIT_ANOMALY_ACTUAL_COL_HEADER = "Actual"
 AUDIT_ANOMALY_PREDICTED_COL_HEADER = "Predicted"
 AUDIT_ANOMALY_ABS_ERROR_COL_HEADER = "Abs_Error"
+
+logger = logging.getLogger(__name__)
+
+
+def _coerce_format_config(
+    value: FormatConfig | Mapping[str, Any] | None,
+    fallback: FormatConfig,
+) -> FormatConfig:
+    """Normalize a formatter object or mapping into a FormatConfig instance."""
+    if value is None:
+        return fallback
+
+    if isinstance(value, FormatConfig):
+        return value
+
+    if not isinstance(value, Mapping):
+        logger.warning(
+            "Unsupported formatter override %r (%s); using %s.",
+            value,
+            type(value).__name__,
+            type(fallback).__name__,
+        )
+        return fallback
+
+    cfg = dict(value)
+    type_value = cfg.pop("type", cfg.pop("format_type", None))
+
+    format_class_map: dict[str, type[FormatConfig]] = {
+        "CurrencyFormat": CurrencyFormat,
+        "PercentageFormat": PercentageFormat,
+        "IntegerFormat": IntegerFormat,
+        "FloatFormat": FloatFormat,
+        "ValueDescFormat": ValueDescFormat,
+        "DateTimeFormat": DateTimeFormat,
+        "DataFormat": DataFormat,
+        "StringFormat": StringFormat,
+        "EnumFormat": EnumFormat,
+        "BoolFormat": BoolFormat,
+    }
+    format_type_map: dict[FormatType, type[FormatConfig]] = {
+        FormatType.CURRENCY: CurrencyFormat,
+        FormatType.PERCENTAGE: PercentageFormat,
+        FormatType.INTEGER: IntegerFormat,
+        FormatType.FLOAT: FloatFormat,
+        FormatType.VALUE_DESC: ValueDescFormat,
+        FormatType.DATETIME: DateTimeFormat,
+        FormatType.DATA: DataFormat,
+        FormatType.STRING: StringFormat,
+        FormatType.ENUM: EnumFormat,
+        FormatType.BOOL: BoolFormat,
+    }
+
+    format_cls = type(fallback)
+    if isinstance(type_value, str):
+        format_cls = format_class_map.get(type_value, format_cls)
+    elif isinstance(type_value, FormatType):
+        format_cls = format_type_map.get(type_value, format_cls)
+
+    enum_fields: dict[str, type[Enum]] = {
+        "numeric_scale": NumericScale,
+        "data_scale": DataScale,
+        "alignment": TextAlignment,
+        "currency_symbol_position": CurrencySymbolPosition,
+        "bool_representation": BoolRepresentation,
+    }
+    for field_name, enum_cls in enum_fields.items():
+        if field_name not in cfg:
+            continue
+        enum_value = cfg[field_name]
+        if isinstance(enum_value, str):
+            try:
+                cfg[field_name] = enum_cls[enum_value]
+            except KeyError:
+                logger.warning(
+                    "Invalid %s '%s' for %s; keeping raw value.",
+                    field_name,
+                    enum_value,
+                    format_cls.__name__,
+                )
+
+    accepted = set(inspect.signature(format_cls.__init__).parameters)
+    accepted.discard("self")
+    kwargs = {k: v for k, v in cfg.items() if k in accepted}
+
+    try:
+        return format_cls(**kwargs)
+    except Exception:
+        logger.exception(
+            "Unable to build %s from mapping %s; using %s.",
+            format_cls.__name__,
+            value,
+            type(fallback).__name__,
+        )
+        return fallback
 
 
 class ModelAuditSummary:
@@ -107,6 +214,9 @@ class ModelAuditSummary:
         val_row_count: int = 0,
         test_row_count: int = 0,
         top_n_importance: int = 1,
+        pdf_feature_importance_chart_limit: int = 12,
+        anomaly_table_max_columns: int | None = None,
+        anomaly_table_show_notes: bool = True,
         duration: float = 0.0,
         features: dict[str, FeatureMetadata] | None = None,
         top_n_anomalies: int = 5,
@@ -137,14 +247,25 @@ class ModelAuditSummary:
         self.test_row_count = test_row_count
         self.processed_row_count = train_row_count + val_row_count
         self.top_n_importance = top_n_importance
+        self.pdf_feature_importance_chart_limit = int(
+            pdf_feature_importance_chart_limit
+        )
+        self.anomaly_table_max_columns = (
+            int(anomaly_table_max_columns)
+            if anomaly_table_max_columns is not None
+            else None
+        )
+        self.anomaly_table_show_notes = bool(anomaly_table_show_notes)
         self.duration = duration
         self.features = features or {}
         self.top_n_anomalies = top_n_anomalies
         self.anomaly_display_map = anomaly_display_map or {}
-        self.actual_value_fmt = actual_value_fmt or StringFormat()
-        self.predicted_value_fmt = predicted_value_fmt or StringFormat()
-        self.abs_error_fmt = abs_error_fmt or FloatFormat()
-        self.error_pct_fmt = error_pct_fmt or FloatFormat()
+        self.actual_value_fmt = _coerce_format_config(actual_value_fmt, StringFormat())
+        self.predicted_value_fmt = _coerce_format_config(
+            predicted_value_fmt, StringFormat()
+        )
+        self.abs_error_fmt = _coerce_format_config(abs_error_fmt, FloatFormat())
+        self.error_pct_fmt = _coerce_format_config(error_pct_fmt, FloatFormat())
         self.anomaly_data = anomaly_data
         self.anomaly_dynamic_features = anomaly_dynamic_features or []
         self.anomaly_threshold = anomaly_threshold
@@ -176,10 +297,50 @@ class ModelAuditSummary:
         self._init_features_to_fit_set()
 
     def _init_features_to_fit_set(self) -> None:
-        """Initialize the features-to-fit set excluding the target column."""
+        """Initialize the features-to-fit set, expanding OHE columns where needed.
+
+        Replicates the OHE-expansion logic from ``ModelAuditor._resolve_features_to_fit_set``
+        so that a restored snapshot produces the same expanded column names that were
+        used during training (e.g. ``DOLocationID_71`` instead of ``DOLocationID``).
+        """
+        target_column = self.data_splits.target_column
+        available_columns = self.data_splits.train_features.columns
+        available_set = set(available_columns)
+
+        resolved: set[FeatureMetadata] = set()
+
+        for feature in self.features.values():
+            if not feature.is_used_in_fit or feature.name == target_column:
+                continue
+
+            if feature.name in available_set:
+                resolved.add(feature)
+                continue
+
+            encoded_columns = sorted(
+                col for col in available_columns if col.startswith(f"{feature.name}_")
+            )
+            for i, encoded_col in enumerate(encoded_columns, start=1):
+                resolved.add(
+                    FeatureMetadata(
+                        name=encoded_col,
+                        id=f"{feature.id}_{i:02d}",
+                        position=available_columns.tolist().index(encoded_col),
+                        short_name=feature.short_name,
+                        formatter=feature.formatter,
+                        description=feature.description,
+                        is_used_in_fit=True,
+                        parent_name=feature.name,
+                    )
+                )
+
+        if resolved:
+            self._features_to_fit_set = resolved
+            return
+
         self._features_to_fit_set = FeatureMetadata.dict_to_set(
             feature_dict=self.features,
-            target_column=self.data_splits.target_column,
+            target_column=target_column,
         )
 
     def resolve_feature(self, col_name: str) -> FeatureMetadata | None:
@@ -203,66 +364,125 @@ class ModelAuditSummary:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """
-        Restore state and recompute missing prediction artifacts.
+        Restore state from a serialized snapshot.
 
-        On unpickle, if prediction or probability artifacts are missing from the
-        config (common in older saves), they are recomputed to ensure the
-        audit remains fully interactive.
+        Prediction artifacts are no longer recomputed eagerly on unpickle.
+        This keeps snapshot reload cheap for operations like export
+        regeneration that only need persisted summary metadata.
         """
         self.__dict__.update(state)
 
-        # Ensure feature set is initialized before re-running fits
+        if "pdf_feature_importance_chart_limit" not in self.__dict__:
+            self.pdf_feature_importance_chart_limit = 12
+        if "anomaly_table_max_columns" not in self.__dict__:
+            self.anomaly_table_max_columns = None
+        if "anomaly_table_show_notes" not in self.__dict__:
+            self.anomaly_table_show_notes = True
+
+        # Ensure feature set is initialized after state restoration.
         self._init_features_to_fit_set()
 
-        new_results: list[ModelConfiguration] = []
+    def _hydrate_prediction_artifacts_for_config(
+        self,
+        config: ModelConfiguration,
+        include_test: bool = True,
+    ) -> ModelConfiguration:
+        """
+        Recompute missing prediction artifacts for a single configuration.
 
-        for config in self.results:
-            model_spec = ModelSpecification.create_model_from_config(config)
-            if model_spec is None:
-                new_results.append(config)
-                continue
+        Persisted scalar metrics are preserved; only missing prediction and
+        probability outputs are backfilled.
+        """
+        needs_val = config.has_val_set_evaluation_scores and config.preds_val is None
+        needs_test = (
+            include_test
+            and config.has_test_set_evaluation_scores
+            and config.preds_test is None
+        )
+        if not (needs_val or needs_test):
+            return config
 
-            current_cfg = config
+        print(f"Hydrating prediction artifacts: {config.model_type.name}")
+        model_spec = ModelSpecification.create_model_from_config(config)
+        if model_spec is None:
+            return config
 
-            # 1. Recompute Validation Artifacts if missing
-            if config.has_val_set_evaluation_scores and config.preds_val is None:
-                val_res = model_spec.fit_and_evaluate_val(
-                    data_splits=self.data_splits,
-                    id=config.id,
-                    features_to_fit_set=self.features_to_fit_set,
-                    score_cv=config.score_cv,
-                    use_combined_data=config.use_combined_data,
-                    filter_outliers=config.filter_outliers,
-                    outlier_count=config.outlier_count,
+        current_cfg = config
+
+        if needs_val:
+            val_res = model_spec.fit_and_evaluate_val(
+                data_splits=self.data_splits,
+                id=config.id,
+                features_to_fit_set=self.features_to_fit_set,
+                score_cv=config.score_cv,
+                use_combined_data=config.use_combined_data,
+                filter_outliers=config.filter_outliers,
+                outlier_count=config.outlier_count,
+            )
+            current_cfg = dataclasses.replace(
+                current_cfg,
+                preds_val=val_res.preds_val,
+                probs_val=val_res.probs_val,
+            )
+
+        if needs_test:
+            test_res = model_spec.evaluate_test_set_performance(
+                data_splits=self.data_splits,
+                config=current_cfg,
+                features_to_fit_set=self.features_to_fit_set,
+            )
+            current_cfg = dataclasses.replace(
+                current_cfg,
+                preds_test=test_res.preds_test,
+                probs_test=test_res.probs_test,
+            )
+
+        return current_cfg
+
+    def hydrate_missing_prediction_artifacts(self, include_test: bool = True) -> None:
+        """
+        Recompute missing prediction artifacts for all loaded configurations.
+
+        Parameters
+        ----------
+        include_test : bool, default True
+            If True, backfill both validation and test prediction artifacts.
+            If False, only validation artifacts are hydrated.
+        """
+        self.results = [
+            self._hydrate_prediction_artifacts_for_config(
+                config,
+                include_test=include_test,
+            )
+            for config in self.results
+        ]
+
+    def ensure_anomaly_context(self) -> None:
+        """
+        Ensure anomaly context is available for export/reporting.
+
+        Most modern snapshots already persist anomaly data. Older snapshots may
+        require the winning model's validation predictions to be rehydrated
+        before anomaly context can be reconstructed.
+        """
+        if self.anomaly_data is not None:
+            return
+        if not self.results:
+            return
+
+        best_config = self.best_overall_model
+        if best_config is None:
+            return
+
+        for index, config in enumerate(self.results):
+            if config is best_config:
+                self.results[index] = self._hydrate_prediction_artifacts_for_config(
+                    config,
+                    include_test=False,
                 )
-                if val_res:
-                    current_cfg = dataclasses.replace(
-                        current_cfg,
-                        # Preserve persisted scalar metrics; only backfill
-                        # missing prediction artifacts needed for reporting.
-                        preds_val=val_res.preds_val,
-                        probs_val=val_res.probs_val,
-                    )
+                break
 
-            # 2. Recompute Test Artifacts if missing
-            if config.has_test_set_evaluation_scores and config.preds_test is None:
-                test_res = model_spec.evaluate_test_set_performance(
-                    data_splits=self.data_splits,
-                    config=current_cfg,
-                    features_to_fit_set=self.features_to_fit_set,
-                )
-                if test_res:
-                    current_cfg = dataclasses.replace(
-                        current_cfg,
-                        # Preserve persisted scalar metrics; only backfill
-                        # missing prediction artifacts needed for reporting.
-                        preds_test=test_res.preds_test,
-                        probs_test=test_res.probs_test,
-                    )
-
-            new_results.append(current_cfg)
-
-        self.results = new_results
+        self.capture_anomaly_context()
 
     @classmethod
     def from_joblib(cls, filepath: Path) -> ModelAuditSummary:
@@ -281,6 +501,7 @@ class ModelAuditSummary:
         """
         from dsr_files.joblib_handler import load_joblib
 
+        print(f"Loading audit snapshot: {filepath}")
         loaded_data, _ = load_joblib(filepath=filepath)
 
         if not isinstance(loaded_data, cls):
@@ -294,6 +515,19 @@ class ModelAuditSummary:
     def add_model_configuration(self, config: ModelConfiguration) -> None:
         """Append a completed model configuration to the results list."""
         self.results.append(config)
+
+        # Emit a compact progress signal so callers can distinguish between
+        # model loop completion and later summary/export processing.
+        logger.info(
+            "Recorded model result #%s: %s (val=%s)",
+            len(self.results),
+            config.model_type.name,
+            (
+                prefs.score_format.format_value(config.score_val)
+                if config.score_val is not None
+                else "N/A"
+            ),
+        )
 
     @property
     def best_overall_model(self) -> ModelConfiguration | None:
@@ -336,6 +570,11 @@ class ModelAuditSummary:
         dict[str, Any]
             A nested dictionary of metadata, aggregate stats, and per-model results.
         """
+        if include_preds:
+            self.hydrate_missing_prediction_artifacts()
+        else:
+            self.ensure_anomaly_context()
+
         # Calculate aggregate compute metrics
         total_cpu = sum(res.total_duration for res in self.results)
         max_ram = max((res.actual_peak_gb for res in self.results), default=0.0)

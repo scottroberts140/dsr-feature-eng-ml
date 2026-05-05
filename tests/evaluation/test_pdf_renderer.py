@@ -1,4 +1,5 @@
 import dataclasses
+from unittest.mock import MagicMock
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -13,7 +14,11 @@ from dsr_feature_eng_ml.enums import (
 )
 from dsr_feature_eng_ml.evaluation import ModelAuditSummary
 from dsr_feature_eng_ml.evaluation.audit_pdf_renderer import AuditPDFRenderer
-from dsr_feature_eng_ml.evaluation.schema import DataSplits, ModelConfiguration
+from dsr_feature_eng_ml.evaluation.schema import (
+    DataSplits,
+    FeatureMetadata,
+    ModelConfiguration,
+)
 from dsr_feature_eng_ml.models.k_neighbors_classifier import KNeighborsClassifierParams
 from dsr_feature_eng_ml.models.lasso_regression import LassoParams
 from dsr_feature_eng_ml.models.random_forest import RandomForestRegressorParams
@@ -162,6 +167,35 @@ def test_pdf_export_workflow(populated_summary, tmp_path):
     assert "Taxi_Audit" in pdf_path.name
 
 
+def test_pdf_export_accepts_dict_model_params(populated_summary, tmp_path):
+    """PDF export should render hyperparameter tables when params are plain dicts."""
+    df_len = len(populated_summary.data_splits.val_target)
+    target_values = pd.Series(20.0).repeat(df_len - 1)
+    target_values[1] = 15.0
+    preds_values = pd.Series(20.0).repeat(df_len - 1)
+    preds_values[1] = 50.0
+    populated_summary.data_splits = dataclasses.replace(
+        populated_summary.data_splits, val_target=target_values
+    )
+    populated_summary.results[0] = dataclasses.replace(
+        populated_summary.results[0],
+        model_params={
+            "n_estimators": 50,
+            "optimization_strategy": OptimizationStrategy.RANDOM_SEARCH,
+        },
+        preds_val=pd.Series(
+            preds_values, index=populated_summary.data_splits.val_target.index
+        ),
+    )
+
+    pdf_path = populated_summary.export_results(
+        prefix="Taxi_Audit_Dict_Params", file_type=FileType.PDF, path=tmp_path
+    )
+
+    assert pdf_path.exists()
+    assert pdf_path.suffix == ".pdf"
+
+
 def test_renderer_toc_registration(populated_summary):
     """
     Verify that the rendering process populates the Table of Contents registry.
@@ -249,6 +283,38 @@ def test_plot_efficiency_scatter_handles_missing_mae(populated_summary):
     assert ax.get_title().startswith("Efficiency:")
 
 
+def test_plot_feature_importance_caps_pdf_display_count(populated_summary):
+    """Feature-importance subplots should cap bar count for PDF readability."""
+    populated_summary.top_n_importance = 25
+    populated_summary.pdf_feature_importance_chart_limit = 8
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    importance_df = pd.DataFrame(
+        {
+            "id": [f"feature_{i}" for i in range(20)],
+            "importance": [float(20 - i) for i in range(20)],
+        }
+    )
+
+    fig, ax = plt.subplots()
+    try:
+        renderer._plot_feature_importance(
+            ax=ax,
+            importance_df=importance_df,
+            model_color="#336699",
+            test_metrics_text=None,
+        )
+    finally:
+        plt.close(fig)
+
+    assert ax.get_title() == "Top 8 Predictors"
+    assert len(ax.patches) == 8
+    assert any(
+        "Showing 8 of requested top 20 for PDF readability" in text.get_text()
+        for text in ax.texts
+    )
+
+
 def test_plot_cumulative_importance_shows_message_when_unavailable(populated_summary):
     """KNN-like models without importances should render an explicit N/A message."""
     knn_cfg = ModelConfiguration(
@@ -296,6 +362,173 @@ def test_plot_feature_importance_centers_fallback_message(populated_summary):
         assert not ax.axison
     finally:
         plt.close(fig)
+
+
+def test_select_anomaly_features_uses_importance_when_capped(populated_summary):
+    """When capped, anomaly columns should prioritize model feature importance."""
+    populated_summary.anomaly_table_max_columns = 2
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    renderer.best_model.model = MagicMock()
+    renderer.best_model.model.feature_analysis = MagicMock()
+    renderer.best_model.model.feature_analysis.feature_importances = pd.DataFrame(
+        {
+            "feature": ["f1", "f2", "f3", "f4"],
+            "importance": [0.9, 0.8, 0.7, 0.6],
+        }
+    )
+
+    selected = renderer._select_anomaly_features(["f3", "f4", "f1", "f2"])
+    assert selected == ["f1", "f2"]
+
+
+def test_select_anomaly_features_falls_back_to_input_order(populated_summary):
+    """When importances are unavailable, capped anomaly columns keep input order."""
+    populated_summary.anomaly_table_max_columns = 2
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    renderer.best_model.model = MagicMock()
+    renderer.best_model.model.feature_analysis = MagicMock()
+    renderer.best_model.model.feature_analysis.feature_importances = pd.DataFrame()
+
+    selected = renderer._select_anomaly_features(["f3", "f4", "f1", "f2"])
+    assert selected == ["f3", "f4"]
+
+
+def test_get_anomaly_cap_note_present_when_capped(populated_summary):
+    """Subtitle note should appear when anomaly feature columns are capped."""
+    renderer = AuditPDFRenderer(summary=populated_summary)
+    note = renderer._get_anomaly_cap_note(raw_count=12, selected_count=8)
+    assert "Showing 8 of 12 anomaly context columns" in note
+
+
+def test_get_anomaly_cap_note_empty_when_not_capped(populated_summary):
+    """No subtitle note should be emitted when no anomaly column cap applies."""
+    renderer = AuditPDFRenderer(summary=populated_summary)
+    assert renderer._get_anomaly_cap_note(raw_count=8, selected_count=8) == ""
+
+
+def test_get_anomaly_cap_note_suppressed_when_notes_disabled(populated_summary):
+    """Cap note should be hidden when anomaly note rendering is disabled."""
+    populated_summary.anomaly_table_show_notes = False
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    note = renderer._get_anomaly_cap_note(raw_count=12, selected_count=8)
+    assert note == ""
+
+
+def test_get_anomaly_column_reduction_note_when_compressed(populated_summary):
+    """Recommend anomaly cap when dynamic columns are visibly compressed."""
+    populated_summary.anomaly_table_max_columns = None
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    note = renderer._get_anomaly_column_reduction_note(
+        dynamic_col_count=12,
+        avg_dynamic_width=0.04,
+        avg_base_width=0.12,
+    )
+
+    assert "anomaly_table_max_columns" in note
+
+
+def test_get_anomaly_column_reduction_note_shown_with_cap_when_compressed(
+    populated_summary,
+):
+    """When compressed, suggest lowering an existing cap."""
+    populated_summary.anomaly_table_max_columns = 8
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    note = renderer._get_anomaly_column_reduction_note(
+        dynamic_col_count=12,
+        avg_dynamic_width=0.04,
+        avg_base_width=0.12,
+    )
+
+    assert "consider lowering" in note
+    assert "anomaly_table_max_columns is 8" in note
+
+
+def test_get_anomaly_column_reduction_note_not_shown_when_readable(populated_summary):
+    """Do not show recommendation when dynamic columns remain readable."""
+    populated_summary.anomaly_table_max_columns = None
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    note = renderer._get_anomaly_column_reduction_note(
+        dynamic_col_count=8,
+        avg_dynamic_width=0.08,
+        avg_base_width=0.12,
+    )
+
+    assert note == ""
+
+
+def test_get_anomaly_column_reduction_note_shown_when_base_columns_compressed(
+    populated_summary,
+):
+    """Recommend adjustment when key base columns are too narrow."""
+    populated_summary.anomaly_table_max_columns = 9
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    note = renderer._get_anomaly_column_reduction_note(
+        dynamic_col_count=9,
+        avg_dynamic_width=0.08,
+        avg_base_width=0.07,
+    )
+
+    assert "Columns are compressed for fit" in note
+    assert "anomaly_table_max_columns is 9" in note
+
+
+def test_get_anomaly_column_reduction_note_suppressed_when_notes_disabled(
+    populated_summary,
+):
+    """Compression advisory should be hidden when anomaly note rendering is disabled."""
+    populated_summary.anomaly_table_show_notes = False
+    populated_summary.anomaly_table_max_columns = 9
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    note = renderer._get_anomaly_column_reduction_note(
+        dynamic_col_count=9,
+        avg_dynamic_width=0.04,
+        avg_base_width=0.07,
+    )
+
+    assert note == ""
+
+
+def test_build_anomaly_dynamic_headers_includes_ohe_suffix(populated_summary):
+    """OHE anomaly columns should include encoded suffixes in headers."""
+    renderer = AuditPDFRenderer(summary=populated_summary)
+    renderer.summary.features = {
+        "base_feature": FeatureMetadata(
+            name="base_feature",
+            id="F01",
+            position=0,
+            short_name="Base",
+        )
+    }
+    base_header = "Base"
+
+    headers = renderer._build_anomaly_dynamic_headers(
+        raw_features=["base_feature_2", "base_feature_71"],
+        resolved_features=["base_feature", "base_feature"],
+    )
+
+    assert headers == [f"{base_header} [2]", f"{base_header} [71]"]
+
+
+def test_build_anomaly_dynamic_headers_keeps_duplicate_suffixes_unique(
+    populated_summary,
+):
+    """If identical suffix labels collide, preserve uniqueness with a counter."""
+    renderer = AuditPDFRenderer(summary=populated_summary)
+
+    headers = renderer._build_anomaly_dynamic_headers(
+        raw_features=["pickup_hour_sin", "pickup_hour_cos"],
+        resolved_features=["pickup_hour", "pickup_hour"],
+    )
+
+    assert headers == ["pickup_hour", "pickup_hour (2)"]
 
 
 def test_plot_classification_diagnostics_uses_centered_inset_axis(populated_summary):

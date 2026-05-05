@@ -332,7 +332,7 @@ def test_serialization_sidecar_logic(populated_summary, tmp_path):
 
 
 def test_setstate_preserves_persisted_scores_when_backfilling_predictions(mini_taxi_df):
-    """Loading snapshots should not mutate persisted val/test scalar metrics."""
+    """Loading snapshots should restore state without eager prediction hydration."""
     target = "fare_amount"
     features = [c for c in mini_taxi_df.columns if c != target]
     splits = DataSplits.from_data_source(
@@ -379,6 +379,60 @@ def test_setstate_preserves_persisted_scores_when_backfilling_predictions(mini_t
         return_value=fake_model,
     ):
         summary.__setstate__(state)
+
+    restored = summary.results[0]
+    assert restored.score_val == 0.837581
+    assert restored.score_test == 0.829512
+    assert restored.preds_val is None
+    assert restored.preds_test is None
+
+
+def test_explicit_hydration_preserves_persisted_scores(mini_taxi_df):
+    """Explicit hydration should backfill predictions without changing scores."""
+    target = "fare_amount"
+    features = [c for c in mini_taxi_df.columns if c != target]
+    splits = DataSplits.from_data_source(
+        mini_taxi_df,
+        features_to_include=features,
+        target_column=target,
+        test_size=0.2,
+        valid_size=0.2,
+        original_row_count=len(mini_taxi_df),
+        random_state=75,
+    )
+
+    cfg = ModelConfiguration(
+        id="cfg-1",
+        model_type=ModelType.RANDOM_FOREST_REGRESSOR,
+        task_type=TaskType.REGRESSION,
+        balancing_strategy=BalancingStrategy.NONE,
+        optimization_strategy=OptimizationStrategy.RANDOM_SEARCH,
+        model_params=RandomForestRegressorParams(),
+        cv=5,
+        scoring=ScoringMetric.R2,
+        n_jobs=1,
+        n_iter=5,
+        has_val_set_evaluation_scores=True,
+        has_test_set_evaluation_scores=True,
+        score_val=0.837581,
+        score_test=0.829512,
+        preds_val=None,
+        preds_test=None,
+    )
+
+    summary = ModelAuditSummary(
+        data_splits=splits,
+        results=[cfg],
+        dataset_name="Explicit Hydration",
+        original_row_count=len(mini_taxi_df),
+    )
+
+    fake_model = _FakeModelSpec(cfg)
+    with patch(
+        "dsr_feature_eng_ml.evaluation.model_audit_summary.ModelSpecification.create_model_from_config",
+        return_value=fake_model,
+    ):
+        summary.hydrate_missing_prediction_artifacts()
 
     restored = summary.results[0]
     assert restored.score_val == 0.837581

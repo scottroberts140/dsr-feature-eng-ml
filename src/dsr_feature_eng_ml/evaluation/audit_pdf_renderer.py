@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import os
 from datetime import datetime
 from enum import Enum
@@ -753,6 +752,7 @@ class AuditPDFRenderer:
         # 2. Build Column Configuration
         column_headers = [
             "ID",
+            "Sub",
             "Feature",
             "Pos",
             "Short Name",
@@ -766,7 +766,7 @@ class AuditPDFRenderer:
             # Match alignment to data type
             if col == "Pos":
                 align = "right"
-            elif col == "Used in Fit":
+            elif col in ("Sub", "Used in Fit"):
                 align = "center"
             else:
                 align = "left"
@@ -786,11 +786,24 @@ class AuditPDFRenderer:
         parent_fmt = StringFormat(fallback="")
         used_fmt = BoolFormat(representation=BoolRepresentation.YES_NO)
 
-        # Iterate through features sorted by ID/Position
-        for fm in self.summary.features.values():
+        # Sort the OHE-expanded fit set by ID so variants are grouped together
+        sorted_features = sorted(self.summary.features_to_fit_set, key=lambda f: f.id)
+
+        for fm in sorted_features:
+            # Split composite IDs (e.g. "F07_01") into parent part and child index;
+            # non-OHE features (e.g. "F07") have no underscore so Sub is blank.
+            parent_id, sep, child_index = fm.id.rpartition("_")
+            if sep:
+                id_col = parent_id
+                sub_col = child_index
+            else:
+                id_col = fm.id
+                sub_col = ""
+
             table_data.append(
                 [
-                    fm.id,
+                    id_col,
+                    sub_col,
                     fm.name,
                     pos_fmt.format_value(fm.position),
                     fm.short_name,
@@ -876,19 +889,31 @@ class AuditPDFRenderer:
         )
 
         # 3. Resolve Feature Mappings for the Table
-        # Maps raw features to display names, removing duplicates while preserving order
-        resolved_f = list(
-            dict.fromkeys(
-                [self.summary.anomaly_display_map.get(f, f) for f in dyn_features]
-            )
+        raw_features = list(dict.fromkeys(dyn_features))
+        selected_features = self._select_anomaly_features(raw_features)
+        cap_note = self._get_anomaly_cap_note(
+            raw_count=len(raw_features), selected_count=len(selected_features)
         )
-        short_names = list(
-            dict.fromkeys(
-                [
-                    (m := self.summary.resolve_feature(f)) and m.short_name or f
-                    for f in resolved_f
-                ]
+
+        if cap_note:
+            fig.text(
+                0.5,
+                sub_y - 0.022,
+                cap_note,
+                fontsize=8,
+                color="gray",
+                ha="center",
+                va="center",
+                transform=fig.transFigure,
             )
+
+        # Maps raw features to display names while preserving chosen order.
+        resolved_f = [
+            self.summary.anomaly_display_map.get(f, f) for f in selected_features
+        ]
+        unique_short_names = self._build_anomaly_dynamic_headers(
+            raw_features=selected_features,
+            resolved_features=resolved_f,
         )
 
         # Column name and header constants — mirror module-level definitions in
@@ -915,7 +940,7 @@ class AuditPDFRenderer:
         ]
 
         columns_to_show = base_cols + resolved_f
-        column_headers = base_headers + short_names
+        column_headers = base_headers + unique_short_names
 
         # 4. Build Table Column Configurations
         table_columns: dict[str, TableColumn] = {}
@@ -983,7 +1008,7 @@ class AuditPDFRenderer:
             table_data.append(formatted_row)
 
         # 6. Render the Anomaly Table
-        table_top_y = sub_y - 0.05
+        table_top_y = sub_y - (0.07 if cap_note else 0.05)
         table = Table(
             data=pd.DataFrame(table_data, columns=column_headers),
             max_table_height=table_top_y
@@ -1001,7 +1026,153 @@ class AuditPDFRenderer:
             detail_bpad=6.0,
         )
 
-        render_table(pdf_page=pdf_page, table=table)
+        table_layout = render_table(pdf_page=pdf_page, table=table, dry_run=True)
+        dynamic_headers = column_headers[len(base_headers) :]
+        base_header_widths = [table.columns[h].width for h in base_headers]
+        avg_dynamic_width = (
+            float(np.mean([table.columns[h].width for h in dynamic_headers]))
+            if dynamic_headers
+            else 1.0
+        )
+        avg_base_width = (
+            float(np.mean(base_header_widths)) if base_header_widths else 1.0
+        )
+        recommendation_note = self._get_anomaly_column_reduction_note(
+            dynamic_col_count=len(dynamic_headers),
+            avg_dynamic_width=avg_dynamic_width,
+            avg_base_width=avg_base_width,
+        )
+
+        render_table_from_page_layout(pdf_page=pdf_page, table_layout=table_layout)
+
+        if recommendation_note and table_layout.pages:
+            table_bottom_y = table_layout.pages[0].rect.get_y()
+            note_y = max(
+                self.pdf_doc.page_configuration.bottom_margin + 0.005,
+                table_bottom_y - 0.02,
+            )
+            fig.text(
+                0.5,
+                note_y,
+                recommendation_note,
+                fontsize=7,
+                color="gray",
+                ha="center",
+                va="top",
+                transform=fig.transFigure,
+            )
+
+    def _select_anomaly_features(self, features: list[str]) -> list[str]:
+        """Apply optional anomaly-table cap using feature importance priority."""
+        cap = getattr(self.summary, "anomaly_table_max_columns", None)
+        if cap is None or cap < 1 or len(features) <= cap:
+            return features
+
+        ranked_features = features
+        importance_df = self.best_model.model.feature_analysis.feature_importances
+        if (
+            isinstance(importance_df, pd.DataFrame)
+            and not importance_df.empty
+            and "feature" in importance_df.columns
+        ):
+            importance_rank = {
+                str(name): idx
+                for idx, name in enumerate(importance_df["feature"].tolist())
+            }
+            matched = [f for f in features if f in importance_rank]
+            matched.sort(key=lambda f: importance_rank[f])
+            unmatched = [f for f in features if f not in importance_rank]
+            ranked_features = matched + unmatched
+
+        return ranked_features[:cap]
+
+    def _get_anomaly_cap_note(self, raw_count: int, selected_count: int) -> str:
+        """Return a subtitle note when anomaly feature columns are capped."""
+        if not getattr(self.summary, "anomaly_table_show_notes", True):
+            return ""
+        if selected_count >= raw_count:
+            return ""
+
+        return (
+            f"Showing {selected_count} of {raw_count} anomaly context columns "
+            "by feature importance for readability"
+        )
+
+    def _build_anomaly_dynamic_headers(
+        self,
+        raw_features: list[str],
+        resolved_features: list[str],
+    ) -> list[str]:
+        """Build unambiguous anomaly headers, including OHE suffixes when present."""
+        fit_features = {f.name: f for f in self.summary.features_to_fit_set}
+        feature_keys = self.summary.features
+
+        headers: list[str] = []
+        seen_headers: dict[str, int] = {}
+
+        for raw_feature, resolved_feature in zip(raw_features, resolved_features):
+            base_meta = self.summary.resolve_feature(resolved_feature)
+            base_header = base_meta.short_name if base_meta else resolved_feature
+
+            ohe_suffix = ""
+            if (
+                raw_feature not in feature_keys
+                and resolved_feature in feature_keys
+                and raw_feature.startswith(f"{resolved_feature}_")
+            ):
+                ohe_suffix = raw_feature[len(resolved_feature) + 1 :]
+            else:
+                raw_meta = fit_features.get(raw_feature)
+                if (
+                    raw_meta is not None
+                    and raw_meta.parent_name is not None
+                    and raw_feature.startswith(f"{raw_meta.parent_name}_")
+                ):
+                    ohe_suffix = raw_feature[len(raw_meta.parent_name) + 1 :]
+
+            if ohe_suffix:
+                candidate = f"{base_header} [{ohe_suffix}]"
+            else:
+                candidate = base_header
+
+            count = seen_headers.get(candidate, 0) + 1
+            seen_headers[candidate] = count
+            headers.append(candidate if count == 1 else f"{candidate} ({count})")
+
+        return headers
+
+    def _get_anomaly_column_reduction_note(
+        self,
+        dynamic_col_count: int,
+        avg_dynamic_width: float,
+        avg_base_width: float,
+    ) -> str:
+        """Recommend anomaly_table_max_columns when columns are too compressed."""
+        if not getattr(self.summary, "anomaly_table_show_notes", True):
+            return ""
+        cap = getattr(self.summary, "anomaly_table_max_columns", None)
+        if dynamic_col_count < 1:
+            return ""
+
+        # Heuristics tuned for monospace 10pt table text.
+        dynamic_compressed = avg_dynamic_width < 0.06
+        base_compressed = avg_base_width < 0.085
+        if not dynamic_compressed and not base_compressed:
+            return ""
+
+        if cap is not None:
+            suggested = max(1, cap - 1)
+            return (
+                "Columns are compressed for fit. Current "
+                f"model_auditor_overrides.anomaly_table_max_columns is {cap}; "
+                f"consider lowering it (for example, {suggested})."
+            )
+
+        return (
+            "Columns are compressed for fit. Consider setting "
+            "model_auditor_overrides.anomaly_table_max_columns "
+            "(for example, 8) in evaluation_settings.yaml."
+        )
 
     def _render_model_legend(self) -> None:
         """
@@ -1418,7 +1589,7 @@ class AuditPDFRenderer:
             final_handles.append(mpatches.Patch(color="none"))
             final_labels.append("")
             final_handles.append(mpatches.Patch(color="none"))
-            final_labels.append("⚠ Overlapping points offset\nfor visibility")
+            final_labels.append("Warning: Overlapping points offset\nfor visibility")
 
         leg = ax.legend(
             handles=final_handles,
@@ -1544,14 +1715,14 @@ class AuditPDFRenderer:
 
         stats_text = (
             f"TRAINING BASELINE\n"
-            f"Mean:  {s_fmt.format_value(model.train_mean)} (σ: {s_fmt.format_value(model.train_std)})\n"
+            f"Mean:  {s_fmt.format_value(model.train_mean)} (Std Dev: {s_fmt.format_value(model.train_std)})\n"
             f"Skew:  {s_fmt.format_value(model.train_skew)} | Kurt: {s_fmt.format_value(model.train_kurtosis)}\n\n"
             f"AUDIT VALIDATION\n"
-            f"Mean:  {s_fmt.format_value(model.val_mean)} (σ: {s_fmt.format_value(model.val_std)})\n"
+            f"Mean:  {s_fmt.format_value(model.val_mean)} (Std Dev: {s_fmt.format_value(model.val_std)})\n"
             f"Skew:  {s_fmt.format_value(model.val_skew)} | Kurt: {s_fmt.format_value(model.val_kurtosis)}\n\n"
             f"SPLIT INTEGRITY CHECK\n"
-            f"Mean Δ: {d_fmt.format_value(model.mean_delta)}\n"
-            f"σ Δ:    {d_fmt.format_value(model.std_delta)}"
+            f"Mean Delta:    {d_fmt.format_value(model.mean_delta)}\n"
+            f"Std Dev Delta: {d_fmt.format_value(model.std_delta)}"
         )
 
         at = AnchoredText(
@@ -1723,7 +1894,7 @@ class AuditPDFRenderer:
         def _legend_label(name: str, fid: str) -> str:
             if len(name) <= MAX_LABEL_CHARS:
                 return name
-            return name[:MAX_LABEL_CHARS].rstrip("_- ") + f"… [{fid}]"
+            return name[:MAX_LABEL_CHARS].rstrip("_- ") + f"... [{fid}]"
 
         cum_series = pd.to_numeric(
             best_model_importance["cumulative_importance_plot"], errors="coerce"
@@ -1932,7 +2103,7 @@ class AuditPDFRenderer:
                         ax.text(
                             final_val + 0.01,
                             y_center,
-                            f"Δ: {delta_fmt.format_value(delta)}",
+                            f"Delta: {delta_fmt.format_value(delta)}",
                             va="center",
                             ha="left",
                             fontsize=9,
@@ -1988,7 +2159,7 @@ class AuditPDFRenderer:
 
         # 1. Prepare Data from Dataclass
         # Converts the model dials into display-friendly string pairs
-        dials = dataclasses.asdict(config.model_params)
+        dials = config.params_dict
         table_data = []
 
         for k, v in dials.items():
@@ -2121,10 +2292,29 @@ class AuditPDFRenderer:
         Plot feature importance bars or a fallback message for a specific model.
         """
         if not importance_df.empty:
+            max_pdf_feature_bars = max(
+                int(getattr(self.summary, "pdf_feature_importance_chart_limit", 12)),
+                1,
+            )
+
             # 1. Filter for active features only
             active_features = importance_df[importance_df["importance"] != 0.0]
-            # Limit display based on audit configuration (e.g., Top 13)
-            display_count = min(len(active_features), self.summary.top_n_importance)
+            requested_count = min(len(active_features), self.summary.top_n_importance)
+            display_count = min(requested_count, max_pdf_feature_bars)
+
+            if display_count == 0:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No non-zero feature importance values are available.",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                    fontsize=10,
+                    style="italic",
+                )
+                ax.axis("off")
+                return
 
             importances = active_features["importance"].iloc[:display_count]
             features = active_features["id"].iloc[:display_count]
@@ -2144,6 +2334,21 @@ class AuditPDFRenderer:
             ax.set_xlabel("Relative Importance / Weight", fontsize=9)
             ax.set_xlim(0, max_val * 1.15)  # Provide room for value labels
             ax.grid(axis="x", linestyle="--", alpha=0.6)
+
+            if display_count < requested_count:
+                ax.text(
+                    0.0,
+                    1.01,
+                    (
+                        f"Showing {display_count} of requested top {requested_count} "
+                        "for PDF readability"
+                    ),
+                    transform=ax.transAxes,
+                    fontsize=8,
+                    color=prefs.color_neutral,
+                    ha="left",
+                    va="bottom",
+                )
 
             for spine in ["top", "right"]:
                 ax.spines[spine].set_visible(False)
@@ -2904,7 +3109,7 @@ class AuditPDFRenderer:
                 format_text(
                     text="Significant score improvement on full data vs sample.",
                     buffer_width=buffer_width,
-                    prefix="•",
+                    prefix="-",
                     suffix="",
                     insert_leading_space=True,
                     include_prefix_on_wrapped_lines=False,
@@ -2918,7 +3123,7 @@ class AuditPDFRenderer:
                     text="This model required aggressive sampling to stay within "
                     "hardware memory limits during the tuning phase.",
                     buffer_width=buffer_width,
-                    prefix="•",
+                    prefix="-",
                     suffix="",
                     insert_leading_space=True,
                     include_prefix_on_wrapped_lines=False,
