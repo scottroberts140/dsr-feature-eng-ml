@@ -52,7 +52,7 @@ class RandomForestParams(ModelParams):
     get_standard_search_grid is not implemented here.
     """
 
-    criterion: str = "gini"
+    criterion: str | list[str] = "gini"
     max_depth: int | None | list[int | None] = None
     n_estimators: int | list[int] = 100
     min_samples_split: int | float | list[int | float] = 2
@@ -87,11 +87,18 @@ class RandomForestClassifierParams(RandomForestParams):
     scoring: ScoringMetric = ScoringMetric.F1
 
     def __post_init__(self) -> None:
-        """Validate that the criterion is valid for classification."""
-        if self.criterion not in get_args(RFCriterion):
+        """Validate that criterion values are valid for classification."""
+        valid = set(get_args(RFCriterion))
+        criteria = (
+            list(self.criterion)
+            if isinstance(self.criterion, (list, tuple))
+            else [self.criterion]
+        )
+        invalid = [c for c in criteria if c not in valid]
+        if invalid:
             raise ValueError(
-                f"Invalid criterion '{self.criterion}' for Classification. "
-                f"Expected one of {get_args(RFCriterion)}"
+                f"Invalid criterion value(s) {invalid} for Classification. "
+                f"Expected values from {sorted(valid)}"
             )
 
     @staticmethod
@@ -120,17 +127,24 @@ class RandomForestClassifierParams(RandomForestParams):
 class RandomForestRegressorParams(RandomForestParams):
     """Hyperparameters for regression random forest models."""
 
-    criterion: str = "squared_error"
+    criterion: str | list[str] = "squared_error"
     max_features: float | Literal["sqrt", "log2"] | None = 1.0
     task_type: TaskType = TaskType.REGRESSION
     scoring: ScoringMetric = ScoringMetric.R2
 
     def __post_init__(self) -> None:
-        """Validate that the criterion is valid for regression."""
-        if self.criterion not in get_args(RFRCriterion):
+        """Validate that criterion values are valid for regression."""
+        valid = set(get_args(RFRCriterion))
+        criteria = (
+            list(self.criterion)
+            if isinstance(self.criterion, (list, tuple))
+            else [self.criterion]
+        )
+        invalid = [c for c in criteria if c not in valid]
+        if invalid:
             raise ValueError(
-                f"Invalid criterion '{self.criterion}' for Regression. "
-                f"Expected one of {get_args(RFRCriterion)}"
+                f"Invalid criterion value(s) {invalid} for Regression. "
+                f"Expected values from {sorted(valid)}"
             )
 
     @staticmethod

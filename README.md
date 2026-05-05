@@ -8,11 +8,11 @@
 
 This suite provides a high-fidelity framework for training, evaluating, and auditing machine learning models. It is designed to move beyond simple accuracy metrics, providing deep insights into model generalization, data drift, and hardware efficiency.
 
-**Version 1.2.3**: This release adds sample audit artifacts and an interactive audit state, while remaining compatible with 1.2.2.
+**Version 1.3.0**: This release adds native ROC-AUC metrics for classification scoring, task-specialized model bases for cleaner inheritance hierarchies, and expanded test coverage.
 
-**Release scope**: Regression workflows have been tested. Classification workflows are implemented but not yet tested; a follow-up release will expand validation and coverage.
+**Release scope**: Regression workflows have been tested. Classification workflows now include native ROC-AUC metrics and comprehensive test coverage (66 tests total across dsr-orchestrator and dsr-feature-eng-ml).
 
-## Recent Improvements (Unreleased)
+## Version 1.3.0 Implementation Details
 
 * Added task-specialized model bases: `ClassificationModelSpecification` and `RegressionModelSpecification`.
 * Introduced `ClassificationModelParams` and `RegressionModelParams` abstract base dataclasses; single-task params classes now inherit task-appropriate defaults without redeclaring `task_type` or `scoring`.
@@ -63,6 +63,7 @@ The ModelAuditor provides a robust export engine via the ModelAuditSummary class
 * **Drift Index**: The percentage difference between training and validation target means, used to identify potential data shift.
 * **Generalization Gap**: The absolute difference between training and validation scores (e.g., R² Gap); used to classify models as Well-Fit, Marginal, or Overfit.
 * **Efficiency**: Measured in rows processed per second, providing context on model throughput relative to hardware resources.
+* **ROC-AUC (Classification)**: The area under the receiver operating characteristic curve (0.0–1.0), measuring classification performance across probability thresholds. Binary classification uses `probs[:, 1]` for positive class probability; multiclass uses one-vs-rest (OvR) with weighted averaging. ROC-AUC values are computed for train, validation, cleaned validation, and test splits and are automatically included in model comparison leaderboards.
 
 ## Installation
 
