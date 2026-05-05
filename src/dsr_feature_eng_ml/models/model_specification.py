@@ -940,7 +940,9 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
         targets: pd.Series[Any],
         filter_outliers: bool,
         outlier_count: int,
-    ) -> tuple[float, float | None, float | None, float | None, pd.Series, pd.DataFrame | None]:
+    ) -> tuple[
+        float, float | None, float | None, float | None, pd.Series, pd.DataFrame | None
+    ]:
         """
         Compute weighted F1 scores, ROC-AUC, and extract class probabilities.
 
@@ -1005,7 +1007,11 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
             if n_classes == 2:
                 roc_auc = float(roc_auc_score(targets, raw_probs[:, 1]))
             else:
-                roc_auc = float(roc_auc_score(targets, raw_probs, multi_class="ovr", average="weighted"))
+                roc_auc = float(
+                    roc_auc_score(
+                        targets, raw_probs, multi_class="ovr", average="weighted"
+                    )
+                )
 
         # 6. Outlier Filtering (Confident Mistakes)
         f1_cleaned: float | None = None
@@ -1038,13 +1044,24 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
                     average="weighted",
                 )
             )
-            
+
             # Calculate cleaned ROC-AUC on filtered subset
             n_classes = raw_probs.shape[1]
             if n_classes == 2:
-                roc_auc_cleaned = float(roc_auc_score(targets.iloc[keep_indices], raw_probs[keep_indices, 1]))
+                roc_auc_cleaned = float(
+                    roc_auc_score(
+                        targets.iloc[keep_indices], raw_probs[keep_indices, 1]
+                    )
+                )
             else:
-                roc_auc_cleaned = float(roc_auc_score(targets.iloc[keep_indices], raw_probs[keep_indices], multi_class="ovr", average="weighted"))
+                roc_auc_cleaned = float(
+                    roc_auc_score(
+                        targets.iloc[keep_indices],
+                        raw_probs[keep_indices],
+                        multi_class="ovr",
+                        average="weighted",
+                    )
+                )
 
         return f1, f1_cleaned, roc_auc, roc_auc_cleaned, preds, probs
 
@@ -1657,7 +1674,14 @@ class ClassificationModelSpecification(ModelSpecification[T_Params, T_Estimator]
             filter_outliers=filter_outliers,
             outlier_count=outlier_count,
         )
-        acc_val, acc_val_cleaned, roc_auc_val, roc_auc_val_cleaned, preds_val, probs_val = self._score_classification(
+        (
+            acc_val,
+            acc_val_cleaned,
+            roc_auc_val,
+            roc_auc_val_cleaned,
+            preds_val,
+            probs_val,
+        ) = self._score_classification(
             features=eval_features,
             targets=eval_target,
             filter_outliers=filter_outliers,
@@ -1691,11 +1715,13 @@ class ClassificationModelSpecification(ModelSpecification[T_Params, T_Estimator]
         filter_outliers: bool,
         outlier_count: int,
     ) -> dict[str, Any]:
-        acc_test, _, roc_auc_test, _, preds_test, probs_test = self._score_classification(
-            features=eval_features,
-            targets=eval_target,
-            filter_outliers=filter_outliers,
-            outlier_count=outlier_count,
+        acc_test, _, roc_auc_test, _, preds_test, probs_test = (
+            self._score_classification(
+                features=eval_features,
+                targets=eval_target,
+                filter_outliers=filter_outliers,
+                outlier_count=outlier_count,
+            )
         )
         return {
             "score_test": acc_test,
