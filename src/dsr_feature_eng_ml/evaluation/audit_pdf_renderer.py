@@ -2149,7 +2149,6 @@ class AuditPDFRenderer:
         """
         Render a hyperparameter table for a single model configuration.
         """
-        fig = pdf_page.fig
         ax_params.axis("off")
         ax_params.set_xlim(0.0, 1.0)
         ax_params.set_ylim(0.0, 1.0)
@@ -2175,7 +2174,12 @@ class AuditPDFRenderer:
         )
 
         # Consistent style for HP and Value columns
-        def get_col_config() -> TableColumn:
+        def get_col_config(
+            max_width: float,
+            lpad: float = 10.0,
+            rpad: float = 10.0,
+            max_width_chars: int | None = None,
+        ) -> TableColumn:
             return TableColumn(
                 header_style=TableColumnStyle(
                     fontweight="bold",
@@ -2198,18 +2202,33 @@ class AuditPDFRenderer:
                     face_color=prefs.color_light_gray,
                     edge_color=TableEdgeColor.closed(color=prefs.color_neutral),
                 ),
-                lpad=10.0,
-                rpad=10.0,
-                max_proportional_width=0.5,
+                lpad=lpad,
+                rpad=rpad,
+                max_proportional_width=max_width,
+                max_width_chars=max_width_chars,
             )
 
-        table_columns = {columns[0]: get_col_config(), columns[1]: get_col_config()}
-        table_columns[columns[1]].lpad = 20.0  # Extra padding for values
+        # Keep Value readable while giving HP labels a bit more room to avoid
+        # touching vertical borders in regression deep-dive pages.
+        table_columns = {
+            columns[0]: get_col_config(
+                max_width=0.44,
+                lpad=10.0,
+                rpad=12.0,
+                # max_width_chars=14 if max_hp_chars >= 16 else 18,
+            ),
+            columns[1]: get_col_config(
+                max_width=0.56,
+                lpad=10.0,
+                rpad=12.0,
+                # max_width_chars=16 if max_value_chars > 16 else None,
+            ),
+        }
 
         # 3. Dynamic Scaling based on Row Count
         hp_count = len(df)
         if hp_count <= 22:
-            fontsize, padding = 9, 12.0
+            fontsize, padding = 9, 10.0
         elif hp_count <= 30:
             fontsize, padding = 8, 6.0
         else:
@@ -2250,10 +2269,17 @@ class AuditPDFRenderer:
                 "ax_params must be a subplot for coordinate calculation."
             )
 
-        target_pos = ss.get_position(fig)
         num_pages = len(table_layout.pages)
 
         if num_pages > 1:
+            ss = ax_params.get_subplotspec()
+            if ss is None:
+                raise RuntimeError(
+                    "ax_params must be a subplot for coordinate calculation."
+                )
+
+            fig = pdf_page.fig
+            target_pos = ss.get_position(fig)
             w_per_col = target_pos.width / num_pages
             spacing = 0.005
 

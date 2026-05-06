@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-05-06
+
+### Changed
+
+* **Hyperparameter Label Readability**: Expanded and shortened hyperparameter display-name mappings to keep deep-dive configuration labels compact and consistent across model families.
+* **Deep-Dive HP Table Layout Tuning**: Refined HP/Value column proportion defaults and spacing in the configuration table renderer to better preserve side-by-side multi-page readability.
+
+### Fixed
+
+* **Restored-Snapshot Residual Plots**: PDF export now hydrates missing validation prediction artifacts before rendering, preventing deep-dive residual panels from showing "No validation predictions available" after loading joblib snapshots.
+
 ## [1.3.0] - 2026-05-05
 
 ### Added

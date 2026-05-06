@@ -1100,6 +1100,10 @@ class ModelAuditSummary:
 
         # --- PDF Export Logic ---
         if FileType.PDF in file_type:
+            # Deep-dive PDF pages (for every model) require validation
+            # predictions/probabilities. Restored snapshots may omit these
+            # artifacts, so rehydrate them before rendering.
+            self.hydrate_missing_prediction_artifacts(include_test=False)
             renderer = AuditPDFRenderer(summary=self, report_title=report_title)
             pdf_doc = renderer.render()
             full_path = pdf_doc.save(output_dir=output_dir, filename=filename)
