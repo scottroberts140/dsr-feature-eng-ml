@@ -1319,37 +1319,46 @@ class AuditPDFRenderer:
 
         for config in self.results:
             # 1. Extract Performance Metrics for the leaderboard and charts
-            performance_rows.append(
-                {
-                    "ID": config.id,
-                    "Model": config.model_type.value,
-                    "Abbr": config.model_type.abbrev,
-                    "Strategy": config.balancing_strategy,
-                    "Available RAM": config.available_gb,
-                    "Est Peak RAM": config.estimated_peak_gb,
-                    "Actual Peak RAM": config.actual_peak_gb,
-                    "Memory Risk": config.memory_risk_triggered,
-                    "Sampling Pct": config.sampling_factor,
-                    "n_jobs": config.concurrent_workers,
-                    "CV Score (Tuning)": config.score_cv,
-                    "Val Score": config.val_score,
-                    "Test Score": (
-                        config.score_test
-                        if config.has_test_set_evaluation_scores
-                        else None
-                    ),
-                    "Cleaned Score": config.score_val_cleaned,
-                    "MAE": config.mae_val,
-                    "Train Time (s)": config.total_duration,
-                    "Efficiency": config.efficiency(self.summary.data_splits),
-                    "Train Score": config.train_score,
-                    "Gap": config.gap,
-                    "Status": config.model_generalization.value,
-                    "Mean Delta": config.mean_delta,
-                }
-            )
+            row = {
+                "ID": config.id,
+                "Model": config.model_type.value,
+                "Abbr": config.model_type.abbrev,
+                "Strategy": config.balancing_strategy,
+                "Available RAM": config.available_gb,
+                "Est Peak RAM": config.estimated_peak_gb,
+                "Actual Peak RAM": config.actual_peak_gb,
+                "Memory Risk": config.memory_risk_triggered,
+                "Sampling Pct": config.sampling_factor,
+                "n_jobs": config.concurrent_workers,
+                "CV Score (Tuning)": config.score_cv,
+                "Val Score": config.val_score,
+                "Test Score": (
+                    config.score_test if config.has_test_set_evaluation_scores else None
+                ),
+                "Cleaned Score": config.score_val_cleaned,
+                "Train Time (s)": config.total_duration,
+                "Efficiency": config.efficiency(self.summary.data_splits),
+                "Train Score": config.train_score,
+                "Gap": config.gap,
+                "Status": config.model_generalization.value,
+                "Mean Delta": config.mean_delta,
+            }
 
-            # 2. Extract Feature Importances for deep-dive plotting
+            # 2. Add task-specific metrics (at least 3 per task type requirement)
+            if config.task_type == TaskType.REGRESSION:
+                # Regression: MAE, MSE, R² (3 metrics)
+                row["MAE"] = config.mae_val
+                row["MSE"] = config.mse_val
+                row["R²"] = config.r2_val
+            else:  # CLASSIFICATION
+                # Classification: Accuracy, ROC-AUC, primary scoring metric (F1/etc.)
+                row["Accuracy"] = config.accuracy_val
+                row["ROC-AUC"] = config.roc_auc_val
+                # Val Score is already added above (e.g., F1 when scoring=F1)
+
+            performance_rows.append(row)
+
+            # 3. Extract Feature Importances for deep-dive plotting
             # We look for the feature_analysis attribute on the configuration object
             if hasattr(config, "feature_analysis") and config.feature_analysis:
                 imp_df = config.feature_analysis.feature_importances.copy()
@@ -1452,13 +1461,25 @@ class AuditPDFRenderer:
             self.summary_df["Abbr"], ha="left", va="center", position=(-0.08, -0.02)
         )
 
-        # Narrow x-axis focus to highlight performance differences
-        c_min = self.summary_df["Val Score"].min()
-        ax.set_xlim(left=max(0, c_min - 0.05), right=1.0)
+        # Use a full-scale baseline so bar lengths remain visually meaningful
+        # across datasets with narrow score ranges (e.g., Adult Income).
+        c_min = float(self.summary_df["Val Score"].min())
+        c_max = float(self.summary_df["Val Score"].max())
+        left_limit = min(0.0, c_min - 0.05)
+        right_limit = max(1.0, c_max + 0.02)
+        ax.set_xlim(left=left_limit, right=right_limit)
 
         # 7. Add Centered Value Labels
-        # Identify the correct patches (the solid bars) for annotation
-        raw_score_bars = cast(list[Rectangle], ax.patches[len(self.summary_df) :])
+        # Identify the solid bars directly from alpha so labels render
+        # whether or not the cleaned-score overlay is present.
+        raw_score_bars: list[Rectangle] = []
+        for p in cast(list[Rectangle], ax.patches):
+            alpha = p.get_alpha()
+            alpha_val = float(alpha) if alpha is not None else 1.0
+            if p.get_width() > 0 and alpha_val >= 0.85:
+                raw_score_bars.append(p)
+        if not raw_score_bars:
+            raw_score_bars = cast(list[Rectangle], ax.patches[: len(self.summary_df)])
         x_visible_min = ax.get_xlim()[0]
         width_fmt = FloatFormat(precision=4)
 
@@ -1493,15 +1514,20 @@ class AuditPDFRenderer:
         """
         Plot model efficiency as an accuracy vs. training time scatter plot.
 
-        Bubble size represents Mean Absolute Error (MAE), providing a three-dimensional
-        view of model performance and precision.
+        Bubble size represents Mean Absolute Error (MAE) for regression, or is uniform for classification.
         """
         # 1. Generate the Scatter Plot
-        # Classification runs often have no MAE; if size maps to all-NaN MAE values,
+        # Classification runs have no MAE column; if size maps to all-NaN values,
         # seaborn drops all rows and the chart appears blank.
         plot_df = self.summary_df.copy()
-        mae_values = pd.to_numeric(plot_df["MAE"], errors="coerce")
-        has_valid_mae = mae_values.notna().any()
+        
+        # Check if MAE column exists (regression only) before trying to access it
+        has_valid_mae = False
+        if "MAE" in plot_df.columns:
+            mae_values = pd.to_numeric(plot_df["MAE"], errors="coerce")
+            has_valid_mae = mae_values.notna().any()
+        else:
+            mae_values = None
 
         # Jitter points that overlap exactly (same Val Score AND same Train Time
         # within tolerance) so both dots remain visible in the static chart.
@@ -1534,7 +1560,7 @@ class AuditPDFRenderer:
         plot_df[y_col] = jittered_y
 
         s_min, s_max = 100.0, 500.0
-        if has_valid_mae:
+        if has_valid_mae and mae_values is not None:
             plot_df["_mae_size"] = mae_values
             valid_mae = plot_df["_mae_size"].dropna()
             if not valid_mae.empty and valid_mae.max() > valid_mae.min():
