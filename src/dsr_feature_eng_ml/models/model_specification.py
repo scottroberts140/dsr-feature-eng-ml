@@ -1492,11 +1492,13 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
                 filter_outliers=filter_outliers,
                 outlier_count=outlier_count,
             )
-            acc_val, acc_val_cleaned, _, _, preds_val, probs_val = self._score_classification(
-                features=eval_features,
-                targets=eval_target,
-                filter_outliers=filter_outliers,
-                outlier_count=outlier_count,
+            acc_val, acc_val_cleaned, _, _, preds_val, probs_val = (
+                self._score_classification(
+                    features=eval_features,
+                    targets=eval_target,
+                    filter_outliers=filter_outliers,
+                    outlier_count=outlier_count,
+                )
             )
             return {
                 "score_train": acc_train,

@@ -3010,14 +3010,14 @@ class AuditPDFRenderer:
             "CV Score (Tuning)",
             "Val Score",
         ]
-        
+
         # Add task-specific validation metrics based on audit task type
         task_type = self.best_model.model.task_type
         if task_type == TaskType.REGRESSION:
             col_headers.extend(["MAE", "MSE", "R²"])
         else:  # CLASSIFICATION
             col_headers.extend(["Accuracy", "ROC-AUC"])
-        
+
         # Complete with test and resource columns
         col_headers.extend(["Test Score", "Train Time (s)", "Actual Peak RAM"])
 
@@ -3078,7 +3078,16 @@ class AuditPDFRenderer:
             table_df[col] = table_df[col].apply(str_fmt.format_value)
 
         # Score columns: CV, Val, Test, and task-specific metrics (MAE, MSE, R², Accuracy, ROC-AUC)
-        score_cols = ["CV Score (Tuning)", "Val Score", "Test Score", "MAE", "MSE", "R²", "Accuracy", "ROC-AUC"]
+        score_cols = [
+            "CV Score (Tuning)",
+            "Val Score",
+            "Test Score",
+            "MAE",
+            "MSE",
+            "R²",
+            "Accuracy",
+            "ROC-AUC",
+        ]
         for col in score_cols:
             if col in table_df.columns:
                 table_df[col] = table_df[col].apply(prefs.score_format.format_value)
