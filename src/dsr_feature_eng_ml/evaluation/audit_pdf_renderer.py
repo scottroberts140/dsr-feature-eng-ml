@@ -1520,7 +1520,7 @@ class AuditPDFRenderer:
         # Classification runs have no MAE column; if size maps to all-NaN values,
         # seaborn drops all rows and the chart appears blank.
         plot_df = self.summary_df.copy()
-        
+
         # Check if MAE column exists (regression only) before trying to access it
         has_valid_mae = False
         if "MAE" in plot_df.columns:
@@ -3003,15 +3003,23 @@ class AuditPDFRenderer:
         )
 
         # 2. Configure Column Styles and Alignment
+        # Build column headers with task-specific metrics
         col_headers = [
             "Model",
             "Abbr",
             "CV Score (Tuning)",
             "Val Score",
-            "Test Score",
-            "Train Time (s)",
-            "Actual Peak RAM",
         ]
+        
+        # Add task-specific validation metrics based on audit task type
+        task_type = self.best_model.model.task_type
+        if task_type == TaskType.REGRESSION:
+            col_headers.extend(["MAE", "MSE", "R²"])
+        else:  # CLASSIFICATION
+            col_headers.extend(["Accuracy", "ROC-AUC"])
+        
+        # Complete with test and resource columns
+        col_headers.extend(["Test Score", "Train Time (s)", "Actual Peak RAM"])
 
         header_edge = TableEdgeColor(
             left=prefs.color_neutral, right=prefs.color_neutral
@@ -3069,8 +3077,11 @@ class AuditPDFRenderer:
         for col in ["Model", "Abbr"]:
             table_df[col] = table_df[col].apply(str_fmt.format_value)
 
-        for col in ["CV Score (Tuning)", "Val Score", "Test Score"]:
-            table_df[col] = table_df[col].apply(prefs.score_format.format_value)
+        # Score columns: CV, Val, Test, and task-specific metrics (MAE, MSE, R², Accuracy, ROC-AUC)
+        score_cols = ["CV Score (Tuning)", "Val Score", "Test Score", "MAE", "MSE", "R²", "Accuracy", "ROC-AUC"]
+        for col in score_cols:
+            if col in table_df.columns:
+                table_df[col] = table_df[col].apply(prefs.score_format.format_value)
 
         # "Actual Peak RAM" is already stored in GB on the model config.
         # Use a plain value+suffix formatter to avoid re-scaling.
