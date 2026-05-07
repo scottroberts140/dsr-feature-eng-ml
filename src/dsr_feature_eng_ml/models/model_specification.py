@@ -1486,13 +1486,13 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
     ) -> dict[str, Any]:
         """Return train/validation metrics in a normalized dictionary shape."""
         if self.task_type == TaskType.CLASSIFICATION:
-            acc_train, _, _, _ = self._score_classification(
+            acc_train, _, _, _, _, _ = self._score_classification(
                 features=train_features,
                 targets=train_target,
                 filter_outliers=filter_outliers,
                 outlier_count=outlier_count,
             )
-            acc_val, acc_val_cleaned, preds_val, probs_val = self._score_classification(
+            acc_val, acc_val_cleaned, _, _, preds_val, probs_val = self._score_classification(
                 features=eval_features,
                 targets=eval_target,
                 filter_outliers=filter_outliers,
@@ -1555,7 +1555,7 @@ class ModelSpecification(ABC, Generic[T_Params, T_Estimator]):
     ) -> dict[str, Any]:
         """Return hold-out test metrics in a normalized dictionary shape."""
         if self.task_type == TaskType.CLASSIFICATION:
-            acc_test, _, preds_test, probs_test = self._score_classification(
+            acc_test, _, _, _, preds_test, probs_test = self._score_classification(
                 features=eval_features,
                 targets=eval_target,
                 filter_outliers=filter_outliers,
