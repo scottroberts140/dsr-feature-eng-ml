@@ -8,6 +8,8 @@
 
 This suite provides a high-fidelity framework for training, evaluating, and auditing machine learning models. It is designed to move beyond simple accuracy metrics, providing deep insights into model generalization, data drift, and hardware efficiency.
 
+**Version 1.3.2**: This release extends the Detailed Audit Stats page to dynamically display task-specific performance metrics (3+ metrics per task type) and fixes tuple unpacking mismatches in classification metric collection.
+
 **Version 1.3.1**: This release improves deep-dive PDF reliability by fixing hyperparameter table border/fit behavior and auto-hydrating missing validation prediction artifacts when rendering from restored snapshots.
 
 **Release scope**: Regression workflows have been tested. Classification workflows include native ROC-AUC metrics and comprehensive test coverage (66 tests total across dsr-orchestrator and dsr-feature-eng-ml).

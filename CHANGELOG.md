@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-05-07
+
+### Added
+
+* **Task-Specific Metrics Display in PDF Reports**: Extended Detailed Audit Stats page to dynamically display task-specific performance metrics (3+ metrics per task type) in the rendered PDF table. Metrics are conditionally added based on audit `task_type`:
+  * **Regression**: MAE, MSE, R² (in addition to CV Score, Val Score, Test Score)
+  * **Classification**: Accuracy, ROC-AUC (in addition to CV Score, Val Score, Test Score)
+  * All metrics formatted consistently with `prefs.score_format`.
+
+### Fixed
+
+* **Classification PDF Generation**: Added safety guard in `_plot_efficiency_scatter()` to prevent `KeyError` when MAE column is absent (regression-only metric). Classification tasks now default to uniform bubble size when MAE is unavailable.
+* **Tuple Unpacking in Metric Collection**: Corrected unpacking of `_score_classification()` return values from 4 to 6 elements in `_get_validation_metrics()` and `_get_test_metrics()` methods in `ModelSpecification`. Returns now correctly capture ROC-AUC metrics: `(f1, f1_cleaned, roc_auc, roc_auc_cleaned, preds, probs)`.
+
 ## [1.3.1] - 2026-05-06
 
 ### Changed
