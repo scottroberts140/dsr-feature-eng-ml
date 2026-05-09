@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-05-09
+
+### Added
+
+* **Data Profile PDF Page**: Added a dedicated Data Profile page to the audit PDF that surfaces per-split target distribution, class percentages, and majority-to-minority imbalance ratios.
+* **Configurable Count Scaling in Audit Summaries**: Added `count_numeric_scale` to `ModelAuditorConfig` and `ModelAuditSummary` so row counts in PDF and exported audit metadata can be rendered with explicit numeric scale control.
+
+### Changed
+
+* **PDF Count Formatting Source of Truth**: Audit PDF row-count formatting now reads from `ModelAuditSummary.count_numeric_scale` instead of hard-coded renderer defaults, keeping exported presentation consistent with orchestrator settings.
+* **Data Profile Table Layout**: Right-aligned count, percent, and ratio columns and simplified row grouping to improve scanability in the new class-balance table.
+
+### Fixed
+
+* **Data Profile Font Shrink Regression**: Restored consistent numeric alignment in the Data Profile table by relying on the updated `dsr-utils` overflow-only shrink-to-fit behavior.
+
 ## [1.3.2] - 2026-05-07
 
 ### Added

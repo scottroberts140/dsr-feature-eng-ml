@@ -214,6 +214,7 @@ class ModelAuditSummary:
         val_row_count: int = 0,
         test_row_count: int = 0,
         top_n_importance: int = 1,
+        count_numeric_scale: NumericScale = NumericScale.AUTO,
         pdf_feature_importance_chart_limit: int = 12,
         anomaly_table_max_columns: int | None = None,
         anomaly_table_show_notes: bool = True,
@@ -247,6 +248,7 @@ class ModelAuditSummary:
         self.test_row_count = test_row_count
         self.processed_row_count = train_row_count + val_row_count
         self.top_n_importance = top_n_importance
+        self.count_numeric_scale = count_numeric_scale
         self.pdf_feature_importance_chart_limit = int(
             pdf_feature_importance_chart_limit
         )
@@ -374,6 +376,8 @@ class ModelAuditSummary:
 
         if "pdf_feature_importance_chart_limit" not in self.__dict__:
             self.pdf_feature_importance_chart_limit = 12
+        if "count_numeric_scale" not in self.__dict__:
+            self.count_numeric_scale = NumericScale.AUTO
         if "anomaly_table_max_columns" not in self.__dict__:
             self.anomaly_table_max_columns = None
         if "anomaly_table_show_notes" not in self.__dict__:
@@ -592,6 +596,7 @@ class ModelAuditSummary:
                 "timestamp": self.audit_timestamp,
                 "dataset_name": self.dataset_name,
                 "duration_seconds": self.duration,
+                "count_numeric_scale": self.count_numeric_scale.name,
                 "row_counts": {
                     "train": self.train_row_count,
                     "val": self.val_row_count,
@@ -708,7 +713,8 @@ class ModelAuditSummary:
         # Only numeric columns support kurtosis calculations
         numeric_df = self.data_splits.val_features.select_dtypes(include=[np.number])
         dynamic_features = (
-            numeric_df.kurt()
+            numeric_df
+            .kurt()
             .sort_values(ascending=False)
             .index[: self.top_n_importance]
             .tolist()

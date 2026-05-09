@@ -8,7 +8,7 @@
 
 This suite provides a high-fidelity framework for training, evaluating, and auditing machine learning models. It is designed to move beyond simple accuracy metrics, providing deep insights into model generalization, data drift, and hardware efficiency.
 
-**Version 1.3.2**: This release extends the Detailed Audit Stats page to dynamically display task-specific performance metrics (3+ metrics per task type) and fixes tuple unpacking mismatches in classification metric collection.
+**Version 1.3.3**: This release adds a dedicated Data Profile PDF page for target distribution and class-balance visibility, plus configurable count scaling for audit row counts.
 
 **Version 1.3.1**: This release improves deep-dive PDF reliability by fixing hyperparameter table border/fit behavior and auto-hydrating missing validation prediction artifacts when rendering from restored snapshots.
 
@@ -47,6 +47,7 @@ This suite provides a high-fidelity framework for training, evaluating, and audi
 * **Intelligent Resampling**: Features exact balancing strategies for classification tasks, ensuring minority and majority classes are perfectly aligned during training.
 * **Memory-Safe Operations**: Includes predictive memory auditing to prevent Out-of-Memory (OOM) errors during large-scale tuning and a side-car serialization strategy for handling massive prediction arrays.
 * **Comprehensive Reporting**: Generates multi-page PDF audit reports featuring leaderboards, deep-dive residual analysis, and feature importance visualizations. [[View Sample PDF Report]](https://github.com/scottroberts140/dsr-feature-eng-ml/blob/main/docs/artifacts/Taxi%20-%20202510_20260208_1600.pdf)
+* **Class-Balance Visibility**: Includes a Data Profile PDF page that summarizes train/validation/test target distributions, per-class percentages, and imbalance ratios for classification workflows.
 
 ## Multi-Format Export Capabilities
 
@@ -139,7 +140,7 @@ Orchestrates comprehensive model evaluation:
 ## Requirements
 
 * Python >= 3.11
-* dsr-utils >= 1.3.0
+* dsr-utils >= 1.7.3
 * dsr-data-tools >= 2.1.0
 * dsr-files >= 3.1.1
 * numpy >= 2.4.4

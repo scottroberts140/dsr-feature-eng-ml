@@ -199,7 +199,7 @@ class AuditPDFRenderer:
 
         # 3. Winning Model Metric Matrix
         model = self.best_model.model
-        row_fmt = IntegerFormat(precision=2, numeric_scale=NumericScale.AUTO)
+        row_fmt = IntegerFormat(numeric_scale=self.summary.count_numeric_scale)
         self.formatted_processed_row_count = row_fmt.format_value(
             self.summary.processed_row_count
         )
@@ -279,6 +279,7 @@ class AuditPDFRenderer:
         # Sequential page generation
         self._render_title_page()
         self._render_executive_summary()
+        self._render_data_profile()
         self._render_anomaly_page()
         self._render_model_legend()
         self._render_audit_results()
@@ -682,6 +683,196 @@ class AuditPDFRenderer:
             df=self.executive_summary_metrics,
         )
 
+    def _compute_class_distribution(self) -> dict[str, dict[str, Any]]:
+        """Compute class distribution statistics for all data splits."""
+        data_splits = self.summary.data_splits
+        result: dict[str, dict[str, Any]] = {}
+
+        for split_name, target_series in [
+            ("train", data_splits.train_target),
+            ("val", data_splits.val_target),
+            ("test", data_splits.test_target),
+        ]:
+            if target_series.empty:
+                result[split_name] = {"total_rows": 0, "classes": {}}
+                continue
+
+            total = len(target_series)
+            value_counts = target_series.value_counts().sort_index()
+
+            classes: dict[str, dict[str, Any]] = {}
+            for class_label, count in value_counts.items():
+                pct = (count / total) * 100.0
+                classes[str(class_label)] = {"count": int(count), "percentage": pct}
+
+            # Calculate imbalance ratio (minority:majority)
+            if len(classes) > 1:
+                counts_list = sorted(classes.values(), key=lambda x: x["count"])
+                minority_count = counts_list[0]["count"]
+                majority_count = counts_list[-1]["count"]
+                imbalance_ratio = (
+                    majority_count / minority_count if minority_count > 0 else 0.0
+                )
+                min_pct = counts_list[0]["percentage"]
+                is_imbalanced = min_pct < 10.0 or min_pct > 90.0
+            else:
+                imbalance_ratio = 1.0
+                is_imbalanced = False
+
+            result[split_name] = {
+                "total_rows": total,
+                "classes": classes,
+                "imbalance_ratio": imbalance_ratio,
+                "is_imbalanced": is_imbalanced,
+            }
+
+        return result
+
+    def _render_data_profile(self) -> None:
+        """Render Data Profile page showing target distribution and class balance."""
+        pdf_page = self.pdf_doc.create_new_page(page_name="Data Profile")
+        fig = pdf_page.fig
+        header_top_y = 0.88
+        fig.text(
+            0.5,
+            header_top_y,
+            "Target Distribution & Class Balance",
+            fontsize=16,
+            weight="bold",
+            ha="center",
+            va="center",
+            transform=fig.transFigure,
+        )
+
+        # Get distribution stats
+        dist_stats = self._compute_class_distribution()
+
+        # Build summary table
+        pct_fmt = PercentageFormat(precision=1)
+        int_fmt = IntegerFormat(numeric_scale=self.summary.count_numeric_scale)
+        float_fmt = FloatFormat(precision=2)
+
+        table_data = []
+        split_order = ["train", "val", "test"]
+
+        for split_name in split_order:
+            split_stats = dist_stats.get(split_name, {})
+            if not split_stats or not split_stats.get("classes"):
+                continue
+
+            total_rows = split_stats["total_rows"]
+            classes = split_stats["classes"]
+            imbalance_ratio = split_stats.get("imbalance_ratio", 1.0)
+            is_imbalanced = split_stats.get("is_imbalanced", False)
+
+            # Add split header
+            split_label = split_name.upper()
+            imbalance_flag = " ⚠️ IMBALANCED" if is_imbalanced else ""
+            table_data.append([
+                f"{split_label} SET{imbalance_flag}",
+                int_fmt.format_value(total_rows),
+                "",
+                "",
+            ])
+
+            # Add class rows
+            for class_label in sorted(classes.keys()):
+                class_info = classes[class_label]
+                count = class_info["count"]
+                pct = class_info["percentage"]
+                table_data.append([
+                    f"  Class {class_label}",
+                    int_fmt.format_value(count),
+                    pct_fmt.format_value(pct / 100.0),
+                    "",
+                ])
+
+            # Add imbalance ratio
+            table_data.append([
+                "  Imbalance Ratio",
+                "",
+                "",
+                f"{float_fmt.format_value(imbalance_ratio)}:1",
+            ])
+
+        df = pd.DataFrame(
+            table_data,
+            columns=["Split / Class", "Count", "%", "Ratio"],
+        )
+
+        # Style configuration
+        column_header_edge = TableEdgeColor(
+            left=prefs.color_neutral, right=prefs.color_neutral
+        )
+        header_style = TableColumnStyle(
+            fontweight="bold",
+            ha="center",
+            va="center",
+            edge_color=column_header_edge,
+            face_color="black",
+            text_color="white",
+        )
+        closed_edge = TableEdgeColor.closed(color=prefs.color_neutral)
+
+        def _make_detail_style(ha: str, *, even: bool = False) -> TableColumnStyle:
+            return TableColumnStyle(
+                ha=ha,
+                va="center",
+                edge_color=closed_edge,
+                text_color=prefs.color_neutral,
+                face_color=prefs.color_light_gray if even else "none",
+            )
+
+        table_columns = {
+            "Split / Class": TableColumn(
+                header_style=header_style,
+                detail_style=_make_detail_style("left"),
+                even_row_style=_make_detail_style("left", even=True),
+                lpad=12.0,
+                rpad=12.0,
+            ),
+            "Count": TableColumn(
+                header_style=header_style,
+                detail_style=_make_detail_style("right"),
+                even_row_style=_make_detail_style("right", even=True),
+                lpad=12.0,
+                rpad=12.0,
+            ),
+            "%": TableColumn(
+                header_style=header_style,
+                detail_style=_make_detail_style("right"),
+                even_row_style=_make_detail_style("right", even=True),
+                lpad=12.0,
+                rpad=12.0,
+            ),
+            "Ratio": TableColumn(
+                header_style=header_style,
+                detail_style=_make_detail_style("right"),
+                even_row_style=_make_detail_style("right", even=True),
+                lpad=12.0,
+                rpad=12.0,
+            ),
+        }
+
+        pc = self.pdf_doc.page_configuration
+        table_top_y = header_top_y - 0.05
+        table = Table(
+            data=df,
+            max_table_height=table_top_y - pc.bottom_margin,
+            mid_x=0.5,
+            top_y=table_top_y,
+            fontsize=10,
+            columns=table_columns,
+            cell_edge_linewidth=TableEdgeLinewidth.all_edges(0.4),
+            table_edge_linewidth=TableEdgeLinewidth.all_edges(0.0),
+            table_edge_color=TableEdgeColor.closed(color=prefs.color_title),
+            header_tpad=8.0,
+            header_bpad=8.0,
+            detail_tpad=6.0,
+            detail_bpad=6.0,
+        )
+        render_table(pdf_page=pdf_page, table=table)
+
     def _render_features_page(self) -> None:
         """
         Render the exhaustive feature list page with technical metadata.
@@ -800,18 +991,16 @@ class AuditPDFRenderer:
                 id_col = fm.id
                 sub_col = ""
 
-            table_data.append(
-                [
-                    id_col,
-                    sub_col,
-                    fm.name,
-                    pos_fmt.format_value(fm.position),
-                    fm.short_name,
-                    parent_fmt.format_value(fm.parent_name),
-                    used_fmt.format_value(fm.is_used_in_fit),
-                    fm.description,
-                ]
-            )
+            table_data.append([
+                id_col,
+                sub_col,
+                fm.name,
+                pos_fmt.format_value(fm.position),
+                fm.short_name,
+                parent_fmt.format_value(fm.parent_name),
+                used_fmt.format_value(fm.is_used_in_fit),
+                fm.description,
+            ])
 
         # 4. Render Table
         table_df = pd.DataFrame(table_data, columns=column_headers)
@@ -1697,12 +1886,10 @@ class AuditPDFRenderer:
                 color=prefs.color_neutral,
                 transform=ax.transAxes,
             )
-            text.set_path_effects(
-                [
-                    path_effects.Stroke(linewidth=3, foreground="white", alpha=0.7),
-                    path_effects.Normal(),
-                ]
-            )
+            text.set_path_effects([
+                path_effects.Stroke(linewidth=3, foreground="white", alpha=0.7),
+                path_effects.Normal(),
+            ])
 
         # 4. Draw Central Tendency Lines
         # Train Baseline (Neutral)
@@ -2313,9 +2500,12 @@ class AuditPDFRenderer:
                 col_left = (
                     target_pos.x0 + (idx * w_per_col) + (spacing if idx > 0 else 0)
                 )
-                ax = fig.add_axes(
-                    (col_left, target_pos.y0, w_per_col - spacing, target_pos.height)
-                )
+                ax = fig.add_axes((
+                    col_left,
+                    target_pos.y0,
+                    w_per_col - spacing,
+                    target_pos.height,
+                ))
                 ax.axis("off")
                 render_table_from_page_layout(
                     pdf_page=pdf_page,
@@ -2630,14 +2820,13 @@ class AuditPDFRenderer:
 
         # 2. Identify Top Outliers
         df = (
-            pd.DataFrame(
-                {
-                    actual_col: y_true,
-                    pred_col: y_preds,
-                    abs_col: abs_error,
-                    pct_col: pct_error,
-                }
-            )
+            pd
+            .DataFrame({
+                actual_col: y_true,
+                pred_col: y_preds,
+                abs_col: abs_error,
+                pct_col: pct_error,
+            })
             .sort_values(by=abs_col, ascending=False)
             .head(n)
         )
@@ -2736,13 +2925,12 @@ class AuditPDFRenderer:
         actual_col, pred_col, conf_col = "Actual", "Predicted", "Confidence"
 
         df = (
-            pd.DataFrame(
-                {
-                    actual_col: y_true,
-                    pred_col: y_preds,
-                    conf_col: confidences,
-                }
-            )[incorrect]
+            pd
+            .DataFrame({
+                actual_col: y_true,
+                pred_col: y_preds,
+                conf_col: confidences,
+            })[incorrect]
             .sort_values(conf_col, ascending=False)
             .head(n)
         )

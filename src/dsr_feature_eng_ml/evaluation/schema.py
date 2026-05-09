@@ -38,6 +38,7 @@ from dsr_utils.formatting import (
     FloatFormat,
     FormatConfig,
     IntegerFormat,
+    NumericScale,
     PercentageFormat,
     StringFormat,
     ValueDescFormat,
@@ -446,13 +447,11 @@ class ModelFeatureImportance:
     ):
         """Initialize feature importance data and calculate cumulative values."""
         # Create the dataframe using the array and metadata
-        self.feature_importances = pd.DataFrame(
-            {
-                "feature": [f.name for f in feature_set],
-                "importance": importances,
-                "id": [f.id for f in feature_set],
-            }
-        ).sort_values("importance", ascending=False)
+        self.feature_importances = pd.DataFrame({
+            "feature": [f.name for f in feature_set],
+            "importance": importances,
+            "id": [f.id for f in feature_set],
+        }).sort_values("importance", ascending=False)
 
         # Calculate cumulative values
         self.feature_importances["cumulative_importance"] = self.feature_importances[
@@ -460,12 +459,10 @@ class ModelFeatureImportance:
         ].cumsum()
 
         # Ensure consistent floating point types for serialization
-        self.feature_importances = self.feature_importances.astype(
-            {
-                "importance": "float32",
-                "cumulative_importance": "float32",
-            }
-        )
+        self.feature_importances = self.feature_importances.astype({
+            "importance": "float32",
+            "cumulative_importance": "float32",
+        })
 
         self.features = self.feature_importances["feature"].to_list()
 
@@ -1062,12 +1059,14 @@ class DataSplits:
 
         # 3. Exact Balancing Logic: Sample majority to match minority count
         # Using n=len(feat_min) prevents fractional rounding discrepancies.
-        feat_downsampled = pd.concat(
-            [feat_min, feat_maj.sample(n=len(feat_min), random_state=self.random_state)]
-        )
-        targ_downsampled = pd.concat(
-            [targ_min, targ_maj.sample(n=len(targ_min), random_state=self.random_state)]
-        )
+        feat_downsampled = pd.concat([
+            feat_min,
+            feat_maj.sample(n=len(feat_min), random_state=self.random_state),
+        ])
+        targ_downsampled = pd.concat([
+            targ_min,
+            targ_maj.sample(n=len(targ_min), random_state=self.random_state),
+        ])
 
         return self._build_rebalanced_splits(
             balanced_features=feat_downsampled,
@@ -1108,9 +1107,10 @@ class DataSplits:
         # 2. Source Data Selection
         if use_combined_data:
             # Merge Train and Val splits for final fitting
-            X = pd.concat(
-                [self.train_features[feature_list], self.val_features[feature_list]]
-            )
+            X = pd.concat([
+                self.train_features[feature_list],
+                self.val_features[feature_list],
+            ])
             y = pd.concat([self.train_target, self.val_target])
         else:
             # Use only the training split
@@ -1901,14 +1901,12 @@ class ModelConfiguration(Generic[T_Params]):
 
     def __hash__(self) -> int:
         """Make the configuration hashable for use in sets or dictionaries."""
-        return hash(
-            (
-                self.model_type,
-                self.balancing_strategy,
-                self.optimization_strategy,
-                self.score_val,
-            )
-        )
+        return hash((
+            self.model_type,
+            self.balancing_strategy,
+            self.optimization_strategy,
+            self.score_val,
+        ))
 
     def __eq__(self, other: object) -> bool:
         """Compare configurations primarily by their validation score."""
@@ -1981,23 +1979,21 @@ class ModelConfiguration(Generic[T_Params]):
 
         # Add Regression-specific context if applicable
         if self.r2_val is not None:
-            data.extend(
-                [
-                    ("-" * 15, "-" * 15),
-                    (
-                        "R2 (Train/Val)",
-                        f"{prefs.score_format.format_value(self.r2_train)} / "
-                        f"{prefs.score_format.format_value(self.r2_val)}",
-                    ),
-                    ("R2 Gap", _f_audit_gap(self.r2_gap, self.model_generalization)),
-                    (
-                        "MAE (Train/Val)",
-                        f"{prefs.score_format.format_value(self.mae_train)} / "
-                        f"{prefs.score_format.format_value(self.mae_val)}",
-                    ),
-                    ("MAE Gap", _f_audit_gap(self.mae_gap, self.model_generalization)),
-                ]
-            )
+            data.extend([
+                ("-" * 15, "-" * 15),
+                (
+                    "R2 (Train/Val)",
+                    f"{prefs.score_format.format_value(self.r2_train)} / "
+                    f"{prefs.score_format.format_value(self.r2_val)}",
+                ),
+                ("R2 Gap", _f_audit_gap(self.r2_gap, self.model_generalization)),
+                (
+                    "MAE (Train/Val)",
+                    f"{prefs.score_format.format_value(self.mae_train)} / "
+                    f"{prefs.score_format.format_value(self.mae_val)}",
+                ),
+                ("MAE Gap", _f_audit_gap(self.mae_gap, self.model_generalization)),
+            ])
 
         # Top Signals Summary
         top_3 = self.feature_analysis.features[:3]
@@ -2029,6 +2025,7 @@ class ModelAuditorConfig:
     n_iter: int = -1
     scoring: ScoringMetric = ScoringMetric.F1
     top_n_importance: int = 1
+    count_numeric_scale: NumericScale = NumericScale.AUTO
     pdf_feature_importance_chart_limit: int = 12
     anomaly_table_max_columns: int | None = None
     anomaly_table_show_notes: bool = True

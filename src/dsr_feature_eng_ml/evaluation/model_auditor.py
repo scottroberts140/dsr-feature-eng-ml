@@ -11,7 +11,13 @@ from types import TracebackType
 
 from cloudpathlib import AnyPath
 from dsr_files.utils import PathLike
-from dsr_utils.formatting import DataScale, DateTimeFormat, EnumFormat, IntegerFormat
+from dsr_utils.formatting import (
+    DataScale,
+    DateTimeFormat,
+    EnumFormat,
+    IntegerFormat,
+    NumericScale,
+)
 
 from dsr_feature_eng_ml.enums import OptimizationStrategy
 from dsr_feature_eng_ml.evaluation.model_audit_summary import ModelAuditSummary
@@ -151,6 +157,7 @@ class ModelAuditor:
             data_splits=config.data_splits,
             dataset_name=config.dataset_name,
             top_n_importance=config.top_n_importance,
+            count_numeric_scale=config.count_numeric_scale,
             pdf_feature_importance_chart_limit=config.pdf_feature_importance_chart_limit,
             anomaly_table_max_columns=config.anomaly_table_max_columns,
             anomaly_table_show_notes=config.anomaly_table_show_notes,
@@ -223,6 +230,7 @@ class ModelAuditor:
         optimize: bool = True,
         save_path: PathLike | None = None,
         append_timestamp_to_save_path: bool = False,
+        count_numeric_scale: NumericScale | None = None,
         max_sample_size: int | None = None,
         perform_memory_check: bool = True,
         filter_outliers: bool = False,
@@ -262,6 +270,12 @@ class ModelAuditor:
             of this setting. Accepts standard level names such as ``"DEBUG"``,
             ``"INFO"``, ``"WARNING"``, ``"ERROR"``, or ``"CRITICAL"``.
         """
+        self.summary.count_numeric_scale = (
+            self.config.count_numeric_scale
+            if count_numeric_scale is None
+            else count_numeric_scale
+        )
+
         base_dir = AnyPath(save_path) if save_path else Path.cwd()
 
         if append_timestamp_to_save_path:
