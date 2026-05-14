@@ -81,34 +81,34 @@ import pandas as pd
 from dsr_feature_eng_ml import DataSplits, ModelEvaluation
 
 # Load your data
-df = pd.read_csv('data.csv')
+df = pd.read_csv("data.csv")
 
 # Create data splits (with automatic scaling)
 data_splits = DataSplits.from_data_source(
     src=df,
-    features_to_include=['feature1', 'feature2', 'feature3'],
-    target_column='target',
+    features_to_include=["feature1", "feature2", "feature3"],
+    target_column="target",
     test_size=0.2,
     valid_size=0.25,
     random_state=42,
-    scale_features=True
+    scale_features=True,
 )
 
 # Evaluate models
 results = ModelEvaluation.evaluate_dataset(
     data_splits=data_splits,
-    dtree_param_grid={'max_depth': [5, 10, 20]},
-    rf_param_grid={'n_estimators': [50, 100]},
-    lr_param_grid={'C': [0.1, 1.0, 10.0]},
+    dtree_param_grid={"max_depth": [5, 10, 20]},
+    rf_param_grid={"n_estimators": [50, 100]},
+    lr_param_grid={"C": [0.1, 1.0, 10.0]},
     cv=5,
     n_iter=50,
     max_iter=1000,
-    scoring='f1',
+    scoring="f1",
     n_jobs=-1,
     viable_f1_gap=0.01,
-    report_title='Model Evaluation',
+    report_title="Model Evaluation",
     perform_dtree_feature_selection=True,
-    perform_rf_feature_selection=True
+    perform_rf_feature_selection=True,
 )
 ```
 
@@ -176,6 +176,7 @@ You can override library defaults (like constants used in evaluation and reporti
 
     ```python
     from dsr_feature_eng_ml import set_pref
+
     set_pref("REPORT_WIDTH", 120)
     set_pref("SCORE_FORMAT", ".3f")
     ```
@@ -203,6 +204,7 @@ You can override library defaults (like constants used in evaluation and reporti
 
     ```python
     from dsr_feature_eng_ml.preferences import resolve_constant
+
     SCORE_FORMAT = resolve_constant("SCORE_FORMAT", ".4f")
     REPORT_WIDTH = resolve_constant("REPORT_WIDTH", 100)
     ```

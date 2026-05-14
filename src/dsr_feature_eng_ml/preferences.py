@@ -477,66 +477,64 @@ class Preferences:
 
     def apply_style(self) -> None:
         """Configure global Matplotlib rcParams for a consistent 'Audit' look."""
-        plt.rcParams.update(
-            {
-                # Font & Text
-                "font.family": "sans-serif",
-                "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
-                "text.color": self.color_neutral,  # Default text color
-                # Axes
-                "axes.titlecolor": self.color_title,  # Titles stay
-                "axes.titlesize": 14,
-                "axes.titleweight": "bold",
-                "axes.titlepad": 25,  # Space between Title and Chart
-                "axes.labelpad": 10,  # Space between Axis Label and Ticks
-                "axes.labelcolor": self.color_neutral,  # Axis labels use Neutral Blue
-                "axes.labelsize": 10,
-                "axes.edgecolor": self.color_neutral,  # Frame of the chart
-                "axes.linewidth": 0.8,
-                "axes.spines.top": False,  # Modern 'Clean' look
-                "axes.spines.right": False,
-                # Grid Styling
-                "axes.grid": True,  # Turn grid on by default
-                "axes.grid.axis": "both",  # Show both X and Y
-                "grid.color": self.color_neutral,  # Use our Audit Blue
-                "grid.linestyle": "--",  # Dashed is less 'heavy' than solid
-                "grid.linewidth": 0.5,  # Keep it very thin
-                "grid.alpha": 0.15,  # High transparency is key
-                # Ensure the grid stays BEHIND the bars and dots
-                "axes.axisbelow": True,
-                # Ticks
-                # X-Tick Styling
-                "xtick.color": self.color_neutral,  # Color of the tick AND the label
-                "xtick.labelsize": 9,
-                "xtick.major.size": 4,  # Length of the little tick line
-                "xtick.major.width": 0.8,
-                # Y-Tick Styling
-                "ytick.color": self.color_neutral,
-                "ytick.labelsize": 9,
-                "ytick.major.size": 4,
-                "ytick.major.width": 0.8,
-                # Legend
-                "legend.fontsize": 9,
-                "legend.title_fontsize": 10,
-                "legend.frameon": True,
-                "legend.framealpha": 0.9,  # Slightly transparent Paper White
-                "legend.edgecolor": self.color_neutral,  # Audit Blue border
-                "legend.fancybox": True,  # Rounded corners
-                "legend.borderpad": 0.8,  # The 'breathing room' inside the box
-                "legend.labelspacing": 0.6,  # Vertical space between entries
-                "legend.handletextpad": 0.5,  # Space between icon and text
-                # Figure
-                "figure.titlesize": 16,
-                "figure.titleweight": "bold",
-                "figure.dpi": 300,  # High quality for PDF
-                "figure.constrained_layout.use": True,  # Automatically prevents overlap
-                "figure.constrained_layout.h_pad": 0.05,  # Spacing between subplots
-                "figure.constrained_layout.w_pad": 0.05,
-                "figure.subplot.top": 0.88,  # Leaves room for our Page Header helper
-                "figure.constrained_layout.wspace": 0.05,
-                "figure.constrained_layout.hspace": 0.05,
-            }
-        )
+        plt.rcParams.update({
+            # Font & Text
+            "font.family": "sans-serif",
+            "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+            "text.color": self.color_neutral,  # Default text color
+            # Axes
+            "axes.titlecolor": self.color_title,  # Titles stay
+            "axes.titlesize": 14,
+            "axes.titleweight": "bold",
+            "axes.titlepad": 25,  # Space between Title and Chart
+            "axes.labelpad": 10,  # Space between Axis Label and Ticks
+            "axes.labelcolor": self.color_neutral,  # Axis labels use Neutral Blue
+            "axes.labelsize": 10,
+            "axes.edgecolor": self.color_neutral,  # Frame of the chart
+            "axes.linewidth": 0.8,
+            "axes.spines.top": False,  # Modern 'Clean' look
+            "axes.spines.right": False,
+            # Grid Styling
+            "axes.grid": True,  # Turn grid on by default
+            "axes.grid.axis": "both",  # Show both X and Y
+            "grid.color": self.color_neutral,  # Use our Audit Blue
+            "grid.linestyle": "--",  # Dashed is less 'heavy' than solid
+            "grid.linewidth": 0.5,  # Keep it very thin
+            "grid.alpha": 0.15,  # High transparency is key
+            # Ensure the grid stays BEHIND the bars and dots
+            "axes.axisbelow": True,
+            # Ticks
+            # X-Tick Styling
+            "xtick.color": self.color_neutral,  # Color of the tick AND the label
+            "xtick.labelsize": 9,
+            "xtick.major.size": 4,  # Length of the little tick line
+            "xtick.major.width": 0.8,
+            # Y-Tick Styling
+            "ytick.color": self.color_neutral,
+            "ytick.labelsize": 9,
+            "ytick.major.size": 4,
+            "ytick.major.width": 0.8,
+            # Legend
+            "legend.fontsize": 9,
+            "legend.title_fontsize": 10,
+            "legend.frameon": True,
+            "legend.framealpha": 0.9,  # Slightly transparent Paper White
+            "legend.edgecolor": self.color_neutral,  # Audit Blue border
+            "legend.fancybox": True,  # Rounded corners
+            "legend.borderpad": 0.8,  # The 'breathing room' inside the box
+            "legend.labelspacing": 0.6,  # Vertical space between entries
+            "legend.handletextpad": 0.5,  # Space between icon and text
+            # Figure
+            "figure.titlesize": 16,
+            "figure.titleweight": "bold",
+            "figure.dpi": 300,  # High quality for PDF
+            "figure.constrained_layout.use": True,  # Automatically prevents overlap
+            "figure.constrained_layout.h_pad": 0.05,  # Spacing between subplots
+            "figure.constrained_layout.w_pad": 0.05,
+            "figure.subplot.top": 0.88,  # Leaves room for our Page Header helper
+            "figure.constrained_layout.wspace": 0.05,
+            "figure.constrained_layout.hspace": 0.05,
+        })
 
     def get_hyperparameter_display_name(self, raw_name: str) -> str:
         """Format hyperparameter keys for reporting."""
