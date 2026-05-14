@@ -8,7 +8,7 @@
 
 This suite provides a high-fidelity framework for training, evaluating, and auditing machine learning models. It is designed to move beyond simple accuracy metrics, providing deep insights into model generalization, data drift, and hardware efficiency.
 
-**Version 1.3.3**: This release adds a dedicated Data Profile PDF page for target distribution and class-balance visibility, plus configurable count scaling for audit row counts.
+**Version 1.3.4**: This release adds `min_child_weight` support for XGBoost classifier parameters, including estimator wiring, parameter reporting, and standard search-grid coverage.
 
 **Version 1.3.1**: This release improves deep-dive PDF reliability by fixing hyperparameter table border/fit behavior and auto-hydrating missing validation prediction artifacts when rendering from restored snapshots.
 

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2026-05-14
+
+### Added
+
+* **XGBoost min_child_weight Hyperparameter Support**: Added `min_child_weight` to `XGBClassifierParams`, estimator construction, and expanded standard search-grid options so the parameter is tunable and configurable in classification workflows.
+
+### Changed
+
+* **Hyperparameter Display Labels**: Added a compact display alias for `min_child_weight` in preferences-backed reporting labels to keep audit views consistent with other XGBoost dial names.
+
 ## [1.3.3] - 2026-05-09
 
 ### Added
