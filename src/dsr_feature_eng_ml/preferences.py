@@ -123,6 +123,7 @@ class Preferences:
             "eval_metric": "Eval Metric",
             "colsample_bytree": "Colsample",
             "subsample": "Subsample",
+            "min_child_weight": "Min Child Wt",
             "reg_alpha": "Reg Alpha",
             "reg_lambda": "Reg Lambda",
             "scale_pos_weight": "Pos Wt Scale",
