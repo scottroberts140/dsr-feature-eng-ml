@@ -112,6 +112,7 @@ class XGBClassifierParams(ClassificationModelParams):
     subsample: float | list[float] = 1.0
     colsample_bytree: float | list[float] = 1.0
     min_child_weight: float | list[float] = 1.0
+    gamma: float | list[float] = 0.0  # Minimum loss reduction for split
     reg_alpha: float | list[float] = 0.0  # L1
     reg_lambda: float | list[float] = 1.0  # L2
     scale_pos_weight: float = 1.0
@@ -128,6 +129,7 @@ class XGBClassifierParams(ClassificationModelParams):
             ("Subsample", f"{self.subsample}"),
             ("Col Sample / Tree", f"{self.colsample_bytree}"),
             ("Min Child Weight", f"{self.min_child_weight}"),
+            ("Gamma", f"{self.gamma}"),
             ("L1 (alpha)", f"{self.reg_alpha}"),
             ("L2 (lambda)", f"{self.reg_lambda}"),
             ("Scale Pos Weight", f"{self.scale_pos_weight}"),
@@ -155,6 +157,7 @@ class XGBClassifierParams(ClassificationModelParams):
                 "n_estimators": [100, 200],
                 "max_depth": [3, 6],
                 "learning_rate": [0.1, 0.3],
+                "gamma": [0.0, 0.1],
             }
 
         return {
@@ -164,6 +167,7 @@ class XGBClassifierParams(ClassificationModelParams):
             "subsample": [0.7, 0.85, 1.0],
             "colsample_bytree": [0.7, 0.85, 1.0],
             "min_child_weight": [1.0, 3.0, 5.0],
+            "gamma": [0.0, 0.1, 0.2],
             "reg_alpha": [0.0, 0.1, 1.0],
             "reg_lambda": [0.5, 1.0, 2.0],
         }
@@ -277,6 +281,7 @@ class XGBClassifierModel(
         )
         reg_alpha = p.reg_alpha[0] if isinstance(p.reg_alpha, list) else p.reg_alpha
         reg_lambda = p.reg_lambda[0] if isinstance(p.reg_lambda, list) else p.reg_lambda
+        gamma = p.gamma[0] if isinstance(p.gamma, list) else p.gamma
 
         return EncodedXGBClassifier(
             n_estimators=n_estimators,
@@ -285,6 +290,7 @@ class XGBClassifierModel(
             subsample=subsample,
             colsample_bytree=colsample_bytree,
             min_child_weight=min_child_weight,
+            gamma=gamma,
             reg_alpha=reg_alpha,
             reg_lambda=reg_lambda,
             scale_pos_weight=p.scale_pos_weight,
