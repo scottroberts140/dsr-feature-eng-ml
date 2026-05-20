@@ -439,6 +439,39 @@ def test_auditor_config_from_dataset(mini_taxi_df):
         assert model.cv == 3
 
 
+def test_auditor_config_from_splits(mini_taxi_df):
+    """Verify split-first constructor instantiates models from pre-built DataSplits."""
+    target = "fare_amount"
+    all_features = [col for col in mini_taxi_df.columns if col != target]
+    splits = DataSplits.from_data_source(
+        src=mini_taxi_df,
+        features_to_include=all_features,
+        target_column=target,
+        test_size=0.2,
+        valid_size=0.2,
+        original_row_count=len(mini_taxi_df),
+        random_state=42,
+        scale_features=True,
+    )
+
+    config = ModelAuditorConfig.from_splits(
+        data_splits=splits,
+        dataset_name="Taxi Test",
+        cv=3,
+        model_classes=[RandomForestRegressorModel, LassoRegression],
+        balancing_strategies=[BalancingStrategy.NONE],
+        task_type=TaskType.REGRESSION,
+        random_state=42,
+    )
+
+    assert config.data_splits is splits
+    assert config.data_splits.target_column == target
+    assert len(config.models_to_run) == 2
+    assert any(isinstance(m, RandomForestRegressorModel) for m in config.models_to_run)
+    for model in config.models_to_run:
+        assert model.cv == 3
+
+
 def test_n_jobs_propagation():
     """Verify that updating n_jobs at the config level updates all models."""
     # Create empty splits for manual instantiation
@@ -470,15 +503,13 @@ def test_config_apply_overrides_updates_supported_fields():
         models_to_run=[m1],
     )
 
-    applied = config.apply_overrides(
-        {
-            "top_n_importance": 7,
-            "pdf_feature_importance_chart_limit": 8,
-            "anomaly_table_show_notes": False,
-            "top_n_anomalies": 9,
-            "n_jobs": 2,
-        }
-    )
+    applied = config.apply_overrides({
+        "top_n_importance": 7,
+        "pdf_feature_importance_chart_limit": 8,
+        "anomaly_table_show_notes": False,
+        "top_n_anomalies": 9,
+        "n_jobs": 2,
+    })
 
     assert applied == [
         "top_n_importance",
@@ -533,13 +564,11 @@ def test_data_splits_skip_encoding_falls_back_for_non_numeric_columns(caplog):
     """Verify string skip_encoding columns fall back to one-hot encoding."""
     caplog.set_level(logging.INFO, logger="dsr_feature_eng_ml.evaluation.schema")
 
-    df = pd.DataFrame(
-        {
-            "city": ["A", "B", "A", "C", "B", "C", "A", "B", "C", "A"],
-            "num": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-            "target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-        }
-    )
+    df = pd.DataFrame({
+        "city": ["A", "B", "A", "C", "B", "C", "A", "B", "C", "A"],
+        "num": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+    })
 
     splits = DataSplits.from_data_source(
         src=df,
@@ -560,25 +589,23 @@ def test_data_splits_skip_encoding_falls_back_for_non_numeric_columns(caplog):
 
 def test_data_splits_numeric_categorical_ohe_suffix_normalization():
     """Numeric categorical OHE columns should map -1 to Other and pad integers."""
-    df = pd.DataFrame(
-        {
-            "loc": [
-                "33",
-                "264",
-                "-1",
-                "33",
-                "264",
-                "33",
-                "-1",
-                "264",
-                "33",
-                "264",
-                "33",
-                "-1",
-            ],
-            "target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-        }
-    )
+    df = pd.DataFrame({
+        "loc": [
+            "33",
+            "264",
+            "-1",
+            "33",
+            "264",
+            "33",
+            "-1",
+            "264",
+            "33",
+            "264",
+            "33",
+            "-1",
+        ],
+        "target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+    })
 
     splits = DataSplits.from_data_source(
         src=df,
@@ -600,12 +627,10 @@ def test_data_splits_numeric_categorical_ohe_suffix_normalization():
 
 def test_data_splits_numeric_categorical_ohe_suffix_width_override():
     """Explicit suffix width should control zero-padding for numeric categories."""
-    df = pd.DataFrame(
-        {
-            "loc": ["33", "264", "-1", "33", "264", "-1", "33", "264", "33", "264"],
-            "target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-        }
-    )
+    df = pd.DataFrame({
+        "loc": ["33", "264", "-1", "33", "264", "-1", "33", "264", "33", "264"],
+        "target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+    })
 
     splits = DataSplits.from_data_source(
         src=df,
@@ -626,12 +651,10 @@ def test_data_splits_numeric_categorical_ohe_suffix_width_override():
 
 def test_data_splits_numeric_categorical_ohe_suffix_width_validation():
     """Reject non-positive custom suffix widths to prevent invalid formatting."""
-    df = pd.DataFrame(
-        {
-            "loc": ["33", "264", "-1", "33", "264", "-1"],
-            "target": [0, 1, 0, 1, 0, 1],
-        }
-    )
+    df = pd.DataFrame({
+        "loc": ["33", "264", "-1", "33", "264", "-1"],
+        "target": [0, 1, 0, 1, 0, 1],
+    })
 
     with pytest.raises(ValueError, match="numeric_ohe_suffix_width must be >= 1"):
         DataSplits.from_data_source(

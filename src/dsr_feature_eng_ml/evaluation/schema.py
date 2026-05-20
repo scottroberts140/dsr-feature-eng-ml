@@ -2129,6 +2129,88 @@ class ModelAuditorConfig:
         return list(overrides.keys())
 
     @classmethod
+    def from_splits(
+        cls,
+        data_splits: DataSplits,
+        dataset_name: str,
+        cv: int,
+        model_classes: Sequence[type[ModelSpecification]],
+        model_params: dict[type[ModelSpecification], ModelParams] | None = None,
+        balancing_strategies: list[BalancingStrategy] | None = None,
+        optimization_strategy: OptimizationStrategy = OptimizationStrategy.MANUAL,
+        task_type: TaskType = TaskType.CLASSIFICATION,
+        features: dict[str, FeatureMetadata] | None = None,
+        random_state: Optional[int] = 42,
+        **kwargs: Any,
+    ) -> ModelAuditorConfig:
+        """
+        Factory method to create a config and instantiate models from DataSplits.
+
+        Parameters
+        ----------
+        data_splits : DataSplits
+            Pre-built train/validation/test split container.
+        dataset_name : str
+            Display name for the dataset used in reports.
+        cv : int
+            Number of cross-validation folds.
+        model_classes : Sequence[type[ModelSpecification]]
+            The list of model types to instantiate.
+        model_params : dict[type[ModelSpecification], ModelParams], optional
+            Per-class hyperparameter overrides.
+        balancing_strategies : list[BalancingStrategy], optional
+            Strategies to apply (NONE, OVERSAMPLED, etc.).
+        optimization_strategy : OptimizationStrategy, default MANUAL
+            Hyperparameter search strategy for all models.
+        task_type : TaskType, default CLASSIFICATION
+            Whether the problem is classification or regression.
+        features : dict[str, FeatureMetadata], optional
+            Explicit feature metadata map. If None, metadata is auto-built from
+            the training split columns after encoding.
+        random_state : int, optional, default 42
+            Random seed propagated into model params.
+        """
+        from dsr_feature_eng_ml.models.model_specification import ModelSpecification
+
+        m_params = model_params or {}
+        b_strategies = balancing_strategies or [BalancingStrategy.NONE]
+        feat_meta = features or FeatureMetadata.from_df(
+            df=data_splits.train_features,
+            exclude_from_fit={data_splits.target_column},
+        )
+        instantiated_models = []
+
+        for m_cls in model_classes:
+            base_params = m_params.get(m_cls)
+
+            if base_params:
+                base_params = dataclasses.replace(
+                    base_params,
+                    random_state=random_state,
+                )
+
+            for strategy in b_strategies:
+                model_instance = ModelSpecification.instantiate_model(
+                    model_cls=m_cls,
+                    strategy=strategy,
+                    params=base_params,
+                    cv=cv,
+                    optimization_strategy=optimization_strategy,
+                    **kwargs,
+                )
+                instantiated_models.append(model_instance)
+
+        return cls(
+            data_splits=data_splits,
+            dataset_name=dataset_name,
+            models_to_run=instantiated_models,
+            task_type=task_type,
+            features=feat_meta,
+            cv=cv,
+            **kwargs,
+        )
+
+    @classmethod
     def from_dataset(
         cls,
         dataset: pd.DataFrame,
@@ -2152,6 +2234,9 @@ class ModelAuditorConfig:
     ) -> ModelAuditorConfig:
         """
         Factory method to create a config and instantiate models from raw data.
+
+        This convenience wrapper builds a ``DataSplits`` instance and then
+        delegates model/config construction to ``from_splits``.
 
         Parameters
         ----------
@@ -2187,8 +2272,6 @@ class ModelAuditorConfig:
             Explicit feature metadata map. If None, metadata is auto-built from
             the training split columns after encoding.
         """
-        from dsr_feature_eng_ml.models.model_specification import ModelSpecification
-
         all_features = [col for col in dataset.columns if col != target_column]
 
         # 1. Create the unified DataSplits
@@ -2205,43 +2288,16 @@ class ModelAuditorConfig:
             numeric_ohe_suffix_width=numeric_ohe_suffix_width,
         )
 
-        # 2. Setup defaults for mutable types
-        m_params = model_params or {}
-        b_strategies = balancing_strategies or [BalancingStrategy.NONE]
-        feat_meta = features or FeatureMetadata.from_df(
-            df=splits.train_features,
-            exclude_from_fit={target_column},
-        )
-        instantiated_models = []
-
-        # 3. Model Instantiation Loop
-        for m_cls in model_classes:
-            base_params = m_params.get(m_cls)
-
-            # Ensure params are updated with global state
-            if base_params:
-                base_params = dataclasses.replace(
-                    base_params,
-                    random_state=random_state,
-                )
-
-            for strategy in b_strategies:
-                model_instance = ModelSpecification.instantiate_model(
-                    model_cls=m_cls,
-                    strategy=strategy,
-                    params=base_params,
-                    cv=cv,
-                    optimization_strategy=optimization_strategy,
-                    **kwargs,
-                )
-                instantiated_models.append(model_instance)
-
-        return cls(
+        return cls.from_splits(
             data_splits=splits,
             dataset_name=dataset_name,
-            models_to_run=instantiated_models,
-            task_type=task_type,
-            features=feat_meta,
             cv=cv,
+            model_classes=model_classes,
+            model_params=model_params,
+            balancing_strategies=balancing_strategies,
+            optimization_strategy=optimization_strategy,
+            task_type=task_type,
+            features=features,
+            random_state=random_state,
             **kwargs,
         )
