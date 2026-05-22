@@ -5,6 +5,8 @@ model configuration snapshots, and supporting statistics helpers that power
 the model audit pipeline.
 """
 
+# pyright: reportGeneralTypeIssues=false
+
 from __future__ import annotations
 
 import dataclasses
@@ -566,7 +568,7 @@ class DataSplits:
     @property
     def evaluation_features(self) -> list[str]:
         """Return the list of columns available for evaluation."""
-        return self.val_features.columns.tolist()
+        return self.val_features.columns.to_list()
 
     @classmethod
     def from_data_source(
@@ -693,10 +695,10 @@ class DataSplits:
                         f"column(s): {present}"
                     )
 
-        numeric_cols = train_feat.select_dtypes(include=[np.number]).columns.tolist()
+        numeric_cols = train_feat.select_dtypes(include=[np.number]).columns.to_list()
         categorical_cols = train_feat.select_dtypes(
             exclude=[np.number]
-        ).columns.tolist()
+        ).columns.to_list()
 
         if numeric_cols:
             if scale_features:
@@ -799,7 +801,7 @@ class DataSplits:
         val_feat = pd.concat([val_num, val_cat], axis=1)
         test_feat = pd.concat([test_num, test_cat], axis=1)
 
-        transformed_features = train_feat.columns.tolist()
+        transformed_features = train_feat.columns.to_list()
 
         return cls(
             features_to_include=transformed_features,
@@ -942,7 +944,7 @@ class DataSplits:
         df_inv = df.copy()
 
         # Identify numeric candidates for inversion
-        numeric_cols = df_inv.select_dtypes(include=[np.number]).columns.tolist()
+        numeric_cols = df_inv.select_dtypes(include=[np.number]).columns.to_list()
 
         # Cross-reference with columns the scaler was actually fitted on
         # This prevents errors if the DataFrame contains new or unscaled numeric columns.
