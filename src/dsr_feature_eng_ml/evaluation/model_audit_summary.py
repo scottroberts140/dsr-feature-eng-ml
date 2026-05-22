@@ -514,6 +514,10 @@ class ModelAuditSummary:
                 f"expected {cls.__name__}"
             )
 
+        stem = filepath.stem
+        if stem.startswith("Audit_State_"):
+            loaded_data.audit_timestamp = stem.removeprefix("Audit_State_")
+
         return loaded_data
 
     def add_model_configuration(self, config: ModelConfiguration) -> None:

@@ -8,6 +8,8 @@
 
 This suite provides a high-fidelity framework for training, evaluating, and auditing machine learning models. It is designed to move beyond simple accuracy metrics, providing deep insights into model generalization, data drift, and hardware efficiency.
 
+**Version 1.3.9**: This release normalizes loaded snapshot timestamps from `Audit_State_<timestamp>.joblib` filenames so `ModelAuditSummary` metadata always reflects the selected artifact.
+
 **Version 1.3.8**: This release resolves noisy Pylance false-positive typing diagnostics in `evaluation/schema.py` and aligns pandas Index conversions with `.to_list()` for cleaner static analysis.
 
 **Version 1.3.4**: This release adds `min_child_weight` support for XGBoost classifier parameters, including estimator wiring, parameter reporting, and standard search-grid coverage.

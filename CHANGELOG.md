@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.9] - 2026-05-22
+
+### Fixed
+
+* **Snapshot Timestamp Normalization on Load**: `ModelAuditSummary.from_joblib(...)` now normalizes `audit_timestamp` from `Audit_State_<timestamp>.joblib` filenames when available, ensuring loaded snapshot metadata matches the selected artifact and downstream reporting paths.
+
 ## [1.3.8] - 2026-05-22
 
 ### Changed
