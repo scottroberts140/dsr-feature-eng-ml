@@ -4,12 +4,18 @@ Expose lightweight package APIs without importing optional visualization
 dependencies until they are actually needed.
 """
 
+from typing import TYPE_CHECKING
+
 from dsr_feature_eng_ml.enums import (
     ModelEnumSortOrder,
     ModelTypeData,
     ModelTypeDataRecType,
     PlotFileName,
 )
+
+if TYPE_CHECKING:
+    from dsr_feature_eng_ml.evaluation.audit_pdf_renderer import AuditPDFRenderer
+    from dsr_feature_eng_ml.utils.memory import check_memory_risk, validate_n_jobs
 
 __all__ = [
     "validate_n_jobs",

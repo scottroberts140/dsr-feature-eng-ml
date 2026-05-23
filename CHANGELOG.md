@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.10] - 2026-05-23
+
+### Fixed
+
+* **Lazy Export Symbol Declarations**: Added `TYPE_CHECKING` declarations in `__init__.py` for lazy-exported names (`validate_n_jobs`, `check_memory_risk`, and `AuditPDFRenderer`) so `__all__` symbols resolve cleanly in static analysis without changing runtime lazy import behavior.
+
 ## [1.3.9] - 2026-05-22
 
 ### Fixed
