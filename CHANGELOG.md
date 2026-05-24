@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.11] - 2026-05-24
+
+### Added
+
+* **Direct Fitted-Model Artifact Export**: Added `FileType.MODEL` export support in `ModelAuditSummary.export_results(...)` to persist per-model fitted estimator bundles (`.joblib`) plus a JSON manifest for downstream inference workflows.
+* **Run-Audit Estimator Handoff**: `ModelAuditor.run_audit(...)` now captures each fitted estimator during the audit loop and triggers a dedicated model-artifact export phase after snapshot persistence.
+
+### Changed
+
+* **Model Artifact Folder Layout**: MODEL exports are now written under a `models/` subfolder beneath the selected output directory to keep root audit folders clean and predictable.
+
+### Fixed
+
+* **Auditor Test Output Isolation**: Updated auditor viability-pruning tests to pass `tmp_path` into `run_audit(...)`, preventing generated `Audit_State_*` and `audit_trace_*` artifacts from being written into the repository root during test runs.
+
 ## [1.3.10] - 2026-05-23
 
 ### Fixed

@@ -301,6 +301,7 @@ class ModelAuditor:
                 bal_fmt = EnumFormat.from_format(type_fmt)
                 id_fmt = IntegerFormat(width=2, pad_value="0")
                 total_models = len(self.config.models_to_run)
+                fitted_estimators: dict[str, object] = {}
 
                 for i, model in enumerate(self.config.models_to_run, 1):
                     pending_tune_complete: str | None = None
@@ -407,6 +408,12 @@ class ModelAuditor:
                         )
 
                     self.summary.add_model_configuration(result)
+                    if model.estimator is None:
+                        raise RuntimeError(
+                            "Estimator unexpectedly missing after fit for model "
+                            f"id {global_id}."
+                        )
+                    fitted_estimators[global_id] = model.estimator
                     print(
                         "Progress: "
                         f"{i}/{total_models} models recorded "
@@ -432,6 +439,16 @@ class ModelAuditor:
                     append_timestamp_to_save_path=False,
                 )
                 print(f"Audit Snapshot: {exp_path}")
+
+                print("Writing fitted model artifacts (.joblib bundles + manifest)...")
+                model_manifest_path = self.summary.export_results(
+                    prefix="Audit_State",
+                    file_type=FileType.MODEL,
+                    path=base_dir,
+                    append_timestamp_to_save_path=False,
+                    fitted_models=fitted_estimators,
+                )
+                print(f"Model Artifact Manifest: {model_manifest_path}")
 
             except Exception as e:
                 print(f"CRITICAL AUDIT ERROR: {str(e)}")

@@ -8,6 +8,10 @@
 
 This suite provides a high-fidelity framework for training, evaluating, and auditing machine learning models. It is designed to move beyond simple accuracy metrics, providing deep insights into model generalization, data drift, and hardware efficiency.
 
+**Version 1.3.11**: This release adds first-class fitted-model artifact export support (`FileType.MODEL`) from `run_audit`, including per-model `.joblib` bundles and a manifest written to a dedicated `models/` subfolder in the user-selected output path.
+
+**Version 1.3.10**: This release adds lazy-export symbol declarations for static-analysis compatibility in package `__init__` modules.
+
 **Version 1.3.9**: This release normalizes loaded snapshot timestamps from `Audit_State_<timestamp>.joblib` filenames so `ModelAuditSummary` metadata always reflects the selected artifact.
 
 **Version 1.3.8**: This release resolves noisy Pylance false-positive typing diagnostics in `evaluation/schema.py` and aligns pandas Index conversions with `.to_list()` for cleaner static analysis.

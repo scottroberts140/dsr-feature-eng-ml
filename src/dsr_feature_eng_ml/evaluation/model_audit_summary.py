@@ -986,6 +986,78 @@ class ModelAuditSummary:
 
         self.results = new_results
 
+    def _export_fitted_models(
+        self,
+        output_dir: PathLike,
+        filename: str,
+        fitted_models: Mapping[str, Any],
+    ) -> Path | CloudPath:
+        """Export per-model fitted estimator bundles and a manifest file."""
+        model_output_dir = AnyPath(output_dir) / "models"
+        model_output_dir.mkdir(parents=True, exist_ok=True)
+
+        model_records: list[dict[str, Any]] = []
+        best_id = (
+            self.best_overall_model.id if self.best_overall_model is not None else None
+        )
+
+        for config in self.results:
+            estimator = fitted_models.get(config.id)
+            if estimator is None:
+                raise RuntimeError(
+                    "MODEL export requested but no fitted estimator was provided "
+                    f"for model id '{config.id}'."
+                )
+            if not callable(getattr(estimator, "predict", None)):
+                raise RuntimeError(
+                    f"Fitted estimator for model id '{config.id}' does not expose predict()."
+                )
+
+            model_slug = "".join(
+                c.lower() if c.isalnum() else "_" for c in config.model_type.value
+            ).strip("_")
+            artifact_stem = f"{filename}_{config.id}_{model_slug}_model"
+
+            artifact_payload = {
+                "audit_timestamp": self.audit_timestamp,
+                "dataset_name": self.dataset_name,
+                "model_id": config.id,
+                "model_type": config.model_type.name,
+                "task_type": config.task_type.name,
+                "scoring": config.scoring.name,
+                "model_params": config.params_dict,
+                "estimator": estimator,
+            }
+            artifact_path, _ = save_joblib(
+                artifact_payload, model_output_dir, artifact_stem
+            )
+
+            model_records.append({
+                "model_id": config.id,
+                "model_type": config.model_type.name,
+                "score_val": config.score_val,
+                "score_cv": config.score_cv,
+                "score_test": config.score_test,
+                "is_best": config.id == best_id,
+                "artifact_path": str(artifact_path),
+            })
+
+        manifest = {
+            "metadata": {
+                "audit_id": f"{filename}",
+                "audit_timestamp": self.audit_timestamp,
+                "dataset_name": self.dataset_name,
+                "exported_models": len(model_records),
+                "best_model_id": best_id,
+            },
+            "models": model_records,
+        }
+
+        manifest_path, _ = save_json(
+            manifest, model_output_dir, f"{filename}_model_artifacts_manifest"
+        )
+        return manifest_path
+
     def export_results(
         self,
         prefix: str,
@@ -994,6 +1066,7 @@ class ModelAuditSummary:
         path_is_full_path: bool = False,
         append_timestamp_to_save_path: bool = False,
         report_title: str = "Model Audit Report",
+        fitted_models: Mapping[str, Any] | None = None,
     ) -> Path | CloudPath:
         """
         Export audit results to CSV, JSON, JOBLIB, Excel, or PDF.
@@ -1012,6 +1085,9 @@ class ModelAuditSummary:
             Append audit timestamp to the output directory.
         report_title : str, default "Model Audit Report"
             The title applied to PDF/Excel report headers.
+        fitted_models : Mapping[str, Any], optional
+            Mapping of model id to fitted estimator. Required when
+            ``FileType.MODEL`` is requested.
 
         Returns
         -------
@@ -1117,6 +1193,19 @@ class ModelAuditSummary:
             renderer = AuditPDFRenderer(summary=self, report_title=report_title)
             pdf_doc = renderer.render()
             full_path = pdf_doc.save(output_dir=output_dir, filename=filename)
+
+        # --- MODEL Export Logic (Direct fitted estimator bundles) ---
+        if FileType.MODEL in file_type:
+            if fitted_models is None:
+                raise RuntimeError(
+                    "FileType.MODEL export requires fitted_models mapping "
+                    "(model_id -> fitted estimator)."
+                )
+            full_path = self._export_fitted_models(
+                output_dir=output_dir,
+                filename=filename,
+                fitted_models=fitted_models,
+            )
 
         return full_path
 

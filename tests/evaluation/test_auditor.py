@@ -146,14 +146,12 @@ def test_auditor_trace_logging(mini_taxi_df, tmp_path):
 def test_feature_alignment_for_one_hot_encoded_columns():
     """Configured categorical features should expand to one-hot columns for fit."""
     row_count = 30
-    df = pd.DataFrame(
-        {
-            "RatecodeID": pd.Series(([1, 2, 3] * 10), dtype="category"),
-            "payment_type": pd.Series(([1, 2] * 15), dtype="category"),
-            "trip_distance": [float(i % 9 + 1) for i in range(row_count)],
-            "fare_amount": [float(i % 40 + 5) for i in range(row_count)],
-        }
-    )
+    df = pd.DataFrame({
+        "RatecodeID": pd.Series(([1, 2, 3] * 10), dtype="category"),
+        "payment_type": pd.Series(([1, 2] * 15), dtype="category"),
+        "trip_distance": [float(i % 9 + 1) for i in range(row_count)],
+        "fare_amount": [float(i % 40 + 5) for i in range(row_count)],
+    })
 
     features = FeatureMetadata.from_df(df=df, exclude_from_fit={"fare_amount"})
 
@@ -178,7 +176,7 @@ def test_feature_alignment_for_one_hot_encoded_columns():
     assert fit_feature_names.issubset(set(config.data_splits.train_features.columns))
 
 
-def test_model_viability_pruning(mini_taxi_df):
+def test_model_viability_pruning(mini_taxi_df, tmp_path):
     """
     Verify that models with a large score gap are pruned from the config.
     """
@@ -204,7 +202,7 @@ def test_model_viability_pruning(mini_taxi_df):
     config.viable_score_gap = 0.01
 
     auditor = ModelAuditor(config)
-    auditor.run_audit(optimize=False)
+    auditor.run_audit(optimize=False, save_path=tmp_path)
 
     # 1. Verify pruning occurred
     # One model should be gone if the gap between them > 0.01
