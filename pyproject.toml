@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dsr-feature-eng-ml"
-version = "1.3.11"
+version = "1.3.12"
 description = "Machine learning-specific feature engineering utilities including models and evaluation tools."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -48,10 +48,11 @@ python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --cov=src/dsr_feature_eng_ml --cov-report=html --cov-report=term-missing"
 
 [tool.setuptools]
-packages = ["dsr_feature_eng_ml"]
+package-dir = { "" = "src" }
 
-[tool.setuptools.package-dir]
-"" = "src"
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["dsr_feature_eng_ml*"]
 
 [tool.isort]
 profile = "black"
